@@ -1,6 +1,7 @@
 package preview
 
 import (
+	"agentflow/internal/sysx"
 	"archive/tar"
 	"bytes"
 	"crypto/sha256"
@@ -15,7 +16,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -213,7 +213,7 @@ func rejectSpecial(path string, info os.FileInfo) error {
 	if info.IsDir() {
 		return nil
 	}
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok && stat.Nlink > 1 {
+	if links, ok := sysx.LinkCount(info); ok && links > 1 {
 		return fmt.Errorf("%w: hardlink %s", ErrUnsupportedEntry, path)
 	}
 	return nil

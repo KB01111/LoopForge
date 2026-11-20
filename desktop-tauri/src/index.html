@@ -1,191 +1,120 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="agentflow-app-domain" content="">
-  <title>LoopForge · Agent 编排平台</title>
-  
-  <!-- Tauri compatibility layer MUST load first -->
-  <script>
-    // Set backend URL immediately
-    window.__TAURI_BACKEND_URL__ = 'http://127.0.0.1:8090';
-    window.__TAURI_ENV__ = true;
-    
-    // Prevent Tauri-specific issues
-    if (typeof window.__TAURI__ !== 'undefined') {
-      // Tauri-specific initialization
-      window.__TAURI_READY__ = true;
-    }
-  </script>
-  
-  <!-- Load compatibility layer -->
-  <script src="tauri-compat.js"></script>
-  
-  <!-- Load Tauri interface -->
-  <script type="module">
-    import { invoke } from '@tauri-apps/api';
-    
-    // Initialize backend URL
-    async function init() {
-      try {
-        const backendUrl = await invoke('get_backend_url_cmd').catch(() => 'http://127.0.0.1:8090');
-        window.__TAURI_BACKEND_URL__ = backendUrl;
-        
-        // Ensure backend is running
-        const isRunning = await invoke('get_backend_status').catch(() => false);
-        if (!isRunning) {
-          await invoke('start_backend');
-        }
-      } catch (e) {
-        console.warn('Backend initialization error:', e);
-      }
-    }
-    
-    init();
-  </script>
-  
-  <!-- Original web app stylesheets -->
-  <script src="/boot-theme.js?v=20261031boot1"></script>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2">
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=2">
-  <link rel="icon" href="/favicon.ico?v=2" sizes="any">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2">
-  <link rel="stylesheet" href="/app/hui-controls.css">
-  <link rel="stylesheet" href="/styles.css?v=20261031v1">
-  <link rel="stylesheet" href="/assets.css?v=20260823v1">
-  <link rel="stylesheet" href="/platform.css?v=20261116nosop">
-  <link rel="stylesheet" href="/observability.css?v=20261031metrics2">
-  <link rel="stylesheet" href="/artifacts.css?v=20260914r3">
-  <link rel="stylesheet" href="/sops.css?v=20261030cards1">
-  <link rel="stylesheet" href="/sync.css?v=20261021schedule1">
-  <link rel="stylesheet" href="/access.css?v=20261031v1">
-  <link rel="stylesheet" href="/product-v3.css?v=20261030runs1">
-  <link rel="stylesheet" href="/product-v4.css?v=20261031req2">
-  <link rel="stylesheet" href="/app/harness-ui.css?v=20261031req1">
-  <link rel="stylesheet" href="/assistant-models.css">
-  <link rel="stylesheet" href="/bots.css">
-  <link rel="stylesheet" href="/app/frame.css">
-  <link rel="stylesheet" href="/chat-codex.css?v=20261031drawer">
-  <link rel="stylesheet" href="/app/harness-icons.css">
-  <link rel="stylesheet" href="/app/navigation.css">
-  <link rel="stylesheet" href="/app/hover-ink.css">
-  <link rel="stylesheet" href="/app/harness-motion.css">
-  <link rel="stylesheet" href="/app/sliding-tabs.css">
-  <link rel="stylesheet" href="/app/mcp.css">
-  <link rel="stylesheet" href="/app/flow-canvas.css?v=20261109cli">
-  <link rel="stylesheet" href="/app/page-feedback.css">
-  <link rel="stylesheet" href="/app/assistant-settings.css">
-  <link rel="stylesheet" href="/preferences.css">
-  <link rel="stylesheet" href="/app/issues-list.css">
-  <link rel="stylesheet" href="/app/requirement-wizard.css?v=20261116nosop">
-  <link rel="stylesheet" href="/app/assets-harness.css">
-  <link rel="stylesheet" href="/app/sops-harness.css">
-  <link rel="stylesheet" href="/app/sop-catalog.css">
-  <link rel="stylesheet" href="/app/observability-harness.css?v=20261030obs1">
-  <link rel="stylesheet" href="/app/topbar-harness.css?v=20261030tb1">
-  <link rel="stylesheet" href="/app/approvals-harness.css?v=20261030ap1">
-  
-  <style>
-    .boot-loader{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:#0a0e16;background:var(--bg,#0a0e16);color:#94a3bd;color:var(--muted,#94a3bd);transition:opacity .18s ease}
-    [data-theme=light] .boot-loader{background:#f5f7fb;background:var(--bg,#f5f7fb);color:#475569;color:var(--muted,#475569)}
-    .boot-loader.leaving{opacity:0;pointer-events:none}
-    .boot-loader-box{display:flex;flex-direction:column;align-items:center;gap:16px}
-    .boot-loader-logo{width:48px;height:48px}
-    .boot-loader-spin{width:18px;height:18px;border-radius:50%;border:2px solid rgba(148,163,189,.3);border-top-color:#5b8cff;animation:boot-loader-spin .8s linear infinite}
-    .boot-loader-text{margin:0;font-size:13px;letter-spacing:.02em}
-    body.booting .app-shell{visibility:hidden}
-    @keyframes boot-loader-spin{to{transform:rotate(360deg)}}
-    @media (prefers-reduced-motion:reduce){.boot-loader-spin{animation:none}.boot-loader{transition:none}}
-  </style>
-  
-  <!-- Original web app scripts -->
-  <script src="/boot.js"></script>
-  <script src="/i18n-en.js"></script>
-  <script src="/i18n.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LoopForge</title>
+<style>
+  :root { color-scheme: dark; --bg:#0a0e16; --card:#121826; --line:#243049; --fg:#e6ebf5; --mut:#8a96ad; --acc:#4f8cff; --err:#ff6b6b; }
+  @media (prefers-color-scheme: light) { :root { color-scheme: light; --bg:#f4f6fb; --card:#fff; --line:#d5dbe8; --fg:#162033; --mut:#5d6a82; } }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--fg); font:14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { width:min(520px, 92vw); background:var(--card); border:1px solid var(--line); border-radius:12px; padding:28px; }
+  h1 { margin:0 0 4px; font-size:20px; } p.sub { margin:0 0 20px; color:var(--mut); }
+  label { display:block; margin:14px 0 4px; font-weight:600; } small { color:var(--mut); display:block; margin-top:4px; }
+  input[type=text], input[type=password], input[type=number] { width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--fg); font:inherit; }
+  .modes { display:flex; gap:16px; margin-top:6px; } .modes label { margin:0; font-weight:400; display:flex; gap:6px; align-items:center; }
+  button { margin-top:20px; padding:9px 16px; border:0; border-radius:8px; background:var(--acc); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); margin-left:8px; }
+  button:disabled { opacity:.6; cursor:default; }
+  .err { white-space:pre-wrap; color:var(--err); margin-top:14px; font-family:Consolas, monospace; font-size:12px; max-height:160px; overflow:auto; }
+  .spin { width:28px; height:28px; border:3px solid var(--line); border-top-color:var(--acc); border-radius:50%; animation:s 1s linear infinite; margin:0 auto 16px; }
+  @keyframes s { to { transform:rotate(360deg); } }
+  .hidden { display:none; }
+</style>
 </head>
+<body>
+<main>
+  <section id="loading" class="hidden" style="text-align:center">
+    <div class="spin"></div>
+    <h1>Starting LoopForge…</h1>
+    <p class="sub" id="loadingMsg">Starting the local backend. The first start can take a minute while the database is prepared.</p>
+  </section>
 
-<body class="booting">
-  <!-- Original loading spinner -->
-  <div id="bootLoader" class="boot-loader" role="status" aria-live="polite" aria-busy="true">
-    <div class="boot-loader-box">
-      <svg class="boot-loader-logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="bootLoaderLogoGradient" x1="0" y1="8" x2="0" y2="58" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3b8eea"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><g fill="none" stroke="url(#bootLoaderLogoGradient)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 27 A11.5 11.5 0 0 1 33.5 27 V45"/><circle cx="43.5" cy="45" r="10"/></g></svg>
-      <div class="boot-loader-spin" aria-hidden="true"></div>
-      <p class="boot-loader-text">正在进入工作台…</p>
+  <section id="setup" class="hidden">
+    <h1>LoopForge Settings</h1>
+    <p class="sub">Choose how this desktop app connects to LoopForge.</p>
+    <div class="modes">
+      <label><input type="radio" name="mode" value="local" checked> Run locally</label>
+      <label><input type="radio" name="mode" value="remote"> Connect to a server</label>
     </div>
-  </div>
-  
-  <div id="globalProgress" class="global-progress" aria-hidden="true"></div>
-  
-  <!-- Original app-shell div -->
-  <div class="app-shell">
-    <!-- Content will be loaded from web/index.html -->
-  </div>
-  
-  <!-- Load the actual web app content -->
-  <script>
-    // Once compatibility layer is ready, load the app
-    function loadWebApp() {
-      // Create a script to load the web app
-      const script = document.createElement('script');
-      script.src = '/app/app.js';
-      script.onload = function() {
-        // Remove the Tauri-specific loading spinner
-        const tauriSplash = document.getElementById('tauriSplash');
-        if (tauriSplash) {
-          tauriSplash.style.display = 'none';
-        }
-      };
-      script.onerror = function() {
-        console.error('Failed to load web app');
-      };
-      document.body.appendChild(script);
+
+    <div id="localFields">
+      <label for="dsn">MySQL connection (DSN)</label>
+      <input id="dsn" type="password" autocomplete="off" placeholder="user:password@tcp(127.0.0.1:33315)/loopforge">
+      <small>LoopForge stores all data in MySQL. Leave blank to keep the saved value. Stored only in your user profile.</small>
+      <label for="port">Local port</label>
+      <input id="port" type="number" min="1024" max="65535" value="8090">
+      <small>The backend listens on 127.0.0.1 only.</small>
+    </div>
+
+    <div id="remoteFields" class="hidden">
+      <label for="remote">Server URL</label>
+      <input id="remote" type="text" placeholder="https://loopforge.example.com">
+    </div>
+
+    <button id="save">Save and start</button>
+    <button id="logs" class="ghost">Show backend log</button>
+    <div id="err" class="err hidden"></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var tauri = window.__TAURI__;
+  var $ = function (id) { return document.getElementById(id); };
+  var invoke = tauri && tauri.core ? tauri.core.invoke : null;
+  var settingsOnly = /[?&]settings=1/.test(location.search);
+
+  function show(which) {
+    ["loading", "setup"].forEach(function (id) { $(id).classList.toggle("hidden", id !== which); });
+  }
+  function showError(msg) { var e = $("err"); e.textContent = msg; e.classList.toggle("hidden", !msg); }
+  function mode() { return document.querySelector("input[name=mode]:checked").value; }
+  function syncMode() {
+    $("localFields").classList.toggle("hidden", mode() !== "local");
+    $("remoteFields").classList.toggle("hidden", mode() !== "remote");
+  }
+  document.querySelectorAll("input[name=mode]").forEach(function (r) { r.addEventListener("change", syncMode); });
+
+  async function launch() {
+    show("loading");
+    try {
+      var url = await invoke("launch");
+      location.replace(url);
+    } catch (e) {
+      show("setup"); showError(String(e));
     }
-    
-    // Check if compatibility layer is loaded
-    const checkCompat = setInterval(() => {
-      if (window.__TAURI_COMPAT_LOADED__) {
-        clearInterval(checkCompat);
-        loadWebApp();
-      }
-    }, 100);
-    
-    // Fallback timeout
-    setTimeout(() => {
-      clearInterval(checkCompat);
-      loadWebApp();
-    }, 5000);
-  </script>
-  
-  <!-- Inject the web app HTML content -->
-  <script>
-    // In development, we need to fetch the web app HTML
-    // In production, we can inline it or serve it from the backend
-    async function injectWebAppHTML() {
-      try {
-        // Try to get the web app HTML from the backend
-        const backendUrl = window.__TAURI_BACKEND_URL__ || 'http://127.0.0.1:8090';
-        const response = await fetch(backendUrl, { timeout: 10000 });
-        if (response.ok) {
-          const html = await response.text();
-          // Parse and inject only the body content
-          const parser = new DOMParser();
-          const doc = parser.parseFromString(html, 'text/html');
-          const bodyContent = doc.body.innerHTML;
-          const appShell = document.querySelector('.app-shell');
-          if (appShell) {
-            appShell.innerHTML = bodyContent;
-          }
-        }
-      } catch (e) {
-        console.warn('Could not fetch web app HTML, using fallback:', e);
-        // In production, the backend serves the full app
-        // In dev, we might need to proxy
-      }
-    }
-    
-    // Delay slightly to let compatibility layer initialize
-    setTimeout(injectWebAppHTML, 1000);
-  </script>
+  }
+
+  $("save").addEventListener("click", async function () {
+    showError("");
+    $("save").disabled = true;
+    try {
+      await invoke("save_config", {
+        mode: mode(),
+        mysqlDsn: $("dsn").value,
+        remoteUrl: $("remote").value,
+        port: parseInt($("port").value, 10) || 8090
+      });
+      await launch();
+    } catch (e) { showError(String(e)); }
+    $("save").disabled = false;
+  });
+  $("logs").addEventListener("click", async function () { showError(await invoke("backend_logs")); });
+
+  async function init() {
+    if (!invoke) { show("setup"); showError("This page must run inside the LoopForge desktop app."); return; }
+    var cfg = await invoke("get_config");
+    document.querySelector("input[name=mode][value=" + cfg.mode + "]").checked = true;
+    $("dsn").placeholder = cfg.mysql_dsn ? "(saved — leave blank to keep)" : $("dsn").placeholder;
+    $("port").value = cfg.port; $("remote").value = cfg.remote_url || "";
+    syncMode();
+    var ready = cfg.mode === "remote" ? !!cfg.remote_url : !!cfg.mysql_dsn;
+    if (ready && !settingsOnly) { launch(); } else { show("setup"); }
+  }
+  init();
+})();
+</script>
 </body>
 </html>

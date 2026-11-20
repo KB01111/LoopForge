@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"agentflow/internal/sysx"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -12,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"agentflow/internal/domain"
@@ -225,7 +225,7 @@ func filesystemEnvironmentIdentity(workspace, driver string, environment map[str
 	if err != nil {
 		return "", err
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
+	dev, ino, ok := sysx.FileID(info)
 	if !ok {
 		return "", fmt.Errorf("workspace filesystem identity unavailable")
 	}
@@ -236,7 +236,7 @@ func filesystemEnvironmentIdentity(workspace, driver string, environment map[str
 		Inode        uint64
 		Environment  map[string]string
 		ProcessEpoch string
-	}{driver, filepath.Clean(workspace), uint64(stat.Dev), stat.Ino, environment, terminalProcessEnvironmentEpoch()})
+	}{driver, filepath.Clean(workspace), dev, ino, environment, terminalProcessEnvironmentEpoch()})
 	if err != nil {
 		return "", err
 	}

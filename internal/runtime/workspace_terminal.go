@@ -9,12 +9,11 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"agentflow/internal/domain"
+
 	"github.com/creack/pty"
-	"golang.org/x/sys/unix"
 )
 
 // TerminalPool owns transient PTYs on the machine that owns the workspace.
@@ -252,15 +251,7 @@ func terminalSize(req domain.WorkspaceTerminalRequest) *pty.Winsize {
 }
 func (s *workspaceTerminal) stop() {
 	s.once.Do(func() {
-		fg, _ := unix.IoctlGetInt(int(s.file.Fd()), unix.TIOCGPGRP)
-		// Closing the controlling PTY also hangs up the foreground process group.
-		syscall.Kill(-s.cmd.Process.Pid, syscall.SIGHUP)
-		s.file.Close()
-		time.Sleep(100 * time.Millisecond)
-		if fg > 0 {
-			syscall.Kill(-fg, syscall.SIGKILL)
-		}
-		syscall.Kill(-s.cmd.Process.Pid, syscall.SIGKILL)
+		s.killProcessGroups()
 		if s.release != nil {
 			s.release()
 		}

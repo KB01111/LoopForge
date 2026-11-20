@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"agentflow/internal/sysx"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -15,7 +16,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -257,10 +257,10 @@ func (m *runnerLoginManager) locked(ctx context.Context, source runnerLoginSourc
 	}
 	defer file.Close()
 	for {
-		if err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
+		if err = sysx.TryLockFile(file); err == nil {
 			break
 		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+		if !errors.Is(err, sysx.ErrLockBusy) {
 			return runnerLoginSnapshot{}, err
 		}
 		select {
@@ -269,7 +269,7 @@ func (m *runnerLoginManager) locked(ctx context.Context, source runnerLoginSourc
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
-	defer syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	defer sysx.UnlockFile(file)
 	return fn(e, path+".pending")
 }
 

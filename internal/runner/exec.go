@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"agentflow/internal/sysx"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -9,10 +10,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"agentflow/internal/domain"
@@ -466,13 +465,7 @@ func asExitError(err error, target **exec.ExitError) bool {
 // setProcessGroup puts the CLI and all of its children into a new process
 // group so a cancel cannot leave orphaned shells or MCP servers behind.
 func setProcessGroup(cmd *exec.Cmd) {
-	if runtime.GOOS == "windows" {
-		return
-	}
-	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-	}
-	cmd.SysProcAttr.Setpgid = true
+	sysx.SetProcessGroup(cmd)
 }
 
 // terminateProcessGroup sends SIGTERM to the whole group, waits a grace
@@ -487,18 +480,14 @@ func terminateProcessGroup(cmd *exec.Cmd, processDone <-chan struct{}) {
 	if cmd.Process == nil {
 		return
 	}
-	if runtime.GOOS == "windows" {
-		_ = cmd.Process.Kill()
-		return
-	}
-	pgid := -cmd.Process.Pid
-	_ = syscall.Kill(pgid, syscall.SIGTERM)
+	pid := cmd.Process.Pid
+	_ = sysx.SignalGroup(pid, false)
 	timer := time.NewTimer(cancelGrace)
 	defer timer.Stop()
 	select {
 	case <-processDone:
 	case <-timer.C:
-		_ = syscall.Kill(pgid, syscall.SIGKILL)
+		_ = sysx.SignalGroup(pid, true)
 	}
 }
 
