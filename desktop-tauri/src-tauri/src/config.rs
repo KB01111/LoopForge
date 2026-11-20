@@ -65,6 +65,23 @@ fn random_hex(bytes: usize) -> String {
     buf.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// A backup file name that does not exist yet, so an earlier backup is never replaced.
+fn unused_backup_path(path: &std::path::Path) -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut n = 0u32;
+    loop {
+        let ext = if n == 0 { format!("json.invalid-{stamp}") } else { format!("json.invalid-{stamp}-{n}") };
+        let candidate = path.with_extension(ext);
+        if !candidate.exists() {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
 impl Config {
     /// Loads settings. A missing file yields defaults. A corrupt file is moved aside (never
     /// overwritten) and reported through `load_error`, as is any failure to persist the signing key.
@@ -76,11 +93,7 @@ impl Config {
             Ok(bytes) => match serde_json::from_slice::<Config>(&bytes) {
                 Ok(c) => cfg = c,
                 Err(e) => {
-                    let stamp = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
-                    let backup = path.with_extension(format!("json.invalid-{stamp}"));
+                    let backup = unused_backup_path(&path);
                     let moved = fs::rename(&path, &backup).is_ok();
                     cfg.load_error = format!(
                         "The saved settings could not be read ({e}). {} Please enter them again.",
@@ -156,5 +169,41 @@ impl Config {
         c.mysql_dsn = if self.mysql_dsn.is_empty() { String::new() } else { "(saved)".into() };
         c.session_secret.clear();
         c
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn corrupt_settings_are_preserved_and_never_overwritten() {
+        let dir = std::env::temp_dir().join(format!("lf-cfg-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("LOOPFORGE_DESKTOP_HOME", &dir);
+
+        // Missing file: defaults, a persisted signing key, no error.
+        let first = Config::load();
+        assert!(first.load_error.is_empty());
+        assert!(config_path().exists());
+
+        // Two corrupt files in the same second must produce two distinct backups.
+        for _ in 0..2 {
+            fs::write(config_path(), b"{ not json").unwrap();
+            let c = Config::load();
+            assert!(c.load_error.contains("could not be read"));
+            assert!(!c.save_blocked);
+        }
+        let backups = fs::read_dir(&dir)
+            .unwrap()
+            .filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().contains("json.invalid"))
+            .count();
+        assert_eq!(backups, 2);
+
+        // A blocked config refuses to save.
+        let blocked = Config { save_blocked: true, ..Config::default() };
+        assert!(blocked.save().is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

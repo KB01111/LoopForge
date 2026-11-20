@@ -153,6 +153,10 @@ fn restart_backend_blocking(app: &AppHandle) -> Result<(), String> {
     let st = app.state::<AppState>();
     st.backend.stop();
     let cfg = st.config.lock().unwrap().clone();
+    if !cfg.load_error.is_empty() {
+        // Never start with settings (e.g. an unsaved signing key) that could not be persisted.
+        return Err(cfg.load_error);
+    }
     if cfg.mode != Mode::Local {
         return Ok(());
     }
