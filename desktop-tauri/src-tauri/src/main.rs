@@ -32,25 +32,37 @@ fn show_main(app: &AppHandle) {
     }
 }
 
-/// Is `url` part of the app itself (setup page or the local/remote platform)?
+/// Same scheme, host and effective port?
+fn same_origin(a: &Url, b: &Url) -> bool {
+    a.scheme() == b.scheme() && a.host_str() == b.host_str() && a.port_or_known_default() == b.port_or_known_default()
+}
+
+/// Is `url` the bundled setup page or the active platform server (and nothing else)?
 fn is_internal(app: &AppHandle, url: &Url) -> bool {
     match url.scheme() {
         "tauri" | "about" | "data" | "blob" => return true,
         _ => {}
     }
-    let host = url.host_str().unwrap_or("");
-    if host == "tauri.localhost" || host == "localhost" || host == "127.0.0.1" || host == "[::1]" {
+    if url.host_str() == Some("tauri.localhost") {
         return true;
     }
-    // Remote-server mode: the configured server is internal too.
     let state = app.state::<AppState>();
     let cfg = state.config.lock().unwrap();
-    if cfg.mode == Mode::Remote {
-        if let Ok(remote) = Url::parse(&cfg.remote_url) {
-            return remote.host_str() == url.host_str() && remote.port_or_known_default() == url.port_or_known_default();
+    match cfg.mode {
+        Mode::Local => {
+            matches!(url.host_str(), Some("127.0.0.1") | Some("localhost") | Some("[::1]"))
+                && url.scheme() == "http"
+                && url.port_or_known_default() == Some(cfg.port)
         }
+        Mode::Remote => Url::parse(&cfg.remote_url).map(|r| same_origin(&r, url)).unwrap_or(false),
     }
-    false
+}
+
+/// Opens a web or mail link in the system default handler; other schemes are ignored.
+fn open_external(app: &AppHandle, url: &Url) {
+    if matches!(url.scheme(), "http" | "https" | "mailto") {
+        let _ = app.opener().open_url(url.as_str(), None::<&str>);
+    }
 }
 
 fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
@@ -69,13 +81,11 @@ fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
             if is_internal(&nav_handle, url) {
                 return true;
             }
-            if matches!(url.scheme(), "http" | "https" | "mailto") {
-                let _ = nav_handle.opener().open_url(url.as_str(), None::<&str>);
-            }
+            open_external(&nav_handle, url);
             false
         })
         .on_new_window(move |url, _features| {
-            let _ = popup_handle.opener().open_url(url.as_str(), None::<&str>);
+            open_external(&popup_handle, &url);
             tauri::webview::NewWindowResponse::Deny
         })
         .build()
@@ -96,32 +106,31 @@ fn save_config(
     remote_url: String,
     port: u16,
 ) -> Result<(), String> {
-    if port < 1024 {
-        return Err("Port must be between 1024 and 65535".into());
-    }
-    if mode == Mode::Remote {
-        let u = Url::parse(remote_url.trim()).map_err(|e| format!("Invalid server URL: {e}"))?;
-        if !matches!(u.scheme(), "http" | "https") || u.host_str().is_none() {
-            return Err("Server URL must start with http:// or https://".into());
-        }
-    } else if mysql_dsn.trim().is_empty() {
-        return Err("A MySQL DSN is required, e.g. user:password@tcp(127.0.0.1:33315)/loopforge".into());
-    }
     let mut cfg = state.config.lock().unwrap();
-    cfg.mode = mode;
+    // Edit a candidate and publish it only once it validates and is persisted.
+    let mut next = cfg.clone();
+    next.mode = mode;
     // An empty DSN field means "keep the stored one" (the stored value is never sent to the UI).
     if !mysql_dsn.trim().is_empty() {
-        cfg.mysql_dsn = mysql_dsn.trim().to_string();
+        next.mysql_dsn = mysql_dsn.trim().to_string();
     }
-    cfg.remote_url = remote_url.trim().trim_end_matches('/').to_string();
-    cfg.port = port;
-    cfg.save().map_err(|e| format!("Could not save settings: {e}"))
+    next.remote_url = remote_url.trim().trim_end_matches('/').to_string();
+    next.port = port;
+    next.load_error.clear();
+    next.validate()?;
+    next.save().map_err(|e| format!("Could not save settings: {e}"))?;
+    *cfg = next;
+    Ok(())
 }
 
 /// Starts the local backend (or validates the remote one) and returns the URL to load.
 #[tauri::command]
 async fn launch(state: tauri::State<'_, AppState>, app: AppHandle) -> Result<String, String> {
     let cfg = state.config.lock().unwrap().clone();
+    if !cfg.load_error.is_empty() {
+        return Err(cfg.load_error);
+    }
+    cfg.validate()?;
     if cfg.mode == Mode::Remote {
         return Ok(cfg.remote_url);
     }

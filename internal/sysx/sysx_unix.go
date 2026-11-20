@@ -83,3 +83,13 @@ func FileOwner(info os.FileInfo) (uint32, bool) {
 	}
 	return st.Uid, true
 }
+
+// SyncDir flushes directory metadata (e.g. a completed rename) to disk.
+func SyncDir(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
+}

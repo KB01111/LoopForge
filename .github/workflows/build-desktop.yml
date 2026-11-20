@@ -6,13 +6,17 @@ on:
     paths:
       - 'desktop-tauri/**'
       - '.github/workflows/build-desktop.yml'
-      - 'internal/sysx/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
       - 'cmd/agentflow/**'
   pull_request:
     paths:
       - 'desktop-tauri/**'
       - '.github/workflows/build-desktop.yml'
-      - 'internal/sysx/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
   workflow_dispatch:
 
 permissions:

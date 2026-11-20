@@ -81,3 +81,7 @@ func FileID(os.FileInfo) (dev, ino uint64, ok bool) { return 0, 0, false }
 
 // FileOwner is not available through os.FileInfo on Windows.
 func FileOwner(os.FileInfo) (uint32, bool) { return 0, false }
+
+// SyncDir is a no-op on Windows: directories cannot be opened for flushing
+// (FlushFileBuffers needs write access), and NTFS journals the rename itself.
+func SyncDir(string) error { return nil }

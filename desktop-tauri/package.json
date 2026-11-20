@@ -5,7 +5,7 @@
   "description": "LoopForge native Windows desktop shell (Tauri 2)",
   "scripts": {
     "tauri": "tauri",
-    "dev": "tauri dev",
+    "dev": "npm run build:backend && tauri dev",
     "build:backend": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-backend.ps1",
     "build": "npm run build:backend && tauri build"
   },

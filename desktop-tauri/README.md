@@ -2,8 +2,8 @@
 
 A native Windows shell around the LoopForge platform. The shell is a small Tauri 2 app that
 runs the Go backend (`cmd/agentflow`) as a hidden child process and shows the platform's own
-web UI in a WebView2 window. The UI is the backend's embedded `web/` bundle, so every
-existing platform feature works unchanged.
+web UI in a WebView2 window. The UI is the backend's embedded `web/` bundle, unchanged; a few
+backend features need Linux/macOS kernel facilities (see **Windows limitations** below).
 
 ## How it works
 
@@ -12,7 +12,7 @@ existing platform feature works unchanged.
 - **Remote mode**: opens an existing LoopForge server URL instead of starting a backend.
 - First launch shows a settings page (MySQL DSN, port, or server URL). Reopen it any time from the
   tray menu → **Settings…**. Settings live in `%APPDATA%\LoopForge\desktop.json`; a session secret is
-  generated once and persisted there. The backend log is `%APPDATA%\LoopForge\logs\backend.log`.
+  generated once and persisted there (the default folder is private to your Windows user; if you override it with `LOOPFORGE_DESKTOP_HOME`, pick a private directory). The backend log is `%APPDATA%\LoopForge\logs\backend.log`.
 - Windows integration: single instance, system tray (show / settings / restart backend / quit),
   no console window, and a job object that kills the backend and every agent process it spawned
   when the app exits or crashes. External links open in the default browser.
@@ -28,6 +28,8 @@ bubblewrap/seatbelt sandboxes (use the Docker sandbox, Docker Desktop required),
 git index-lock detection.
 
 ## Build
+
+The installer targets 64-bit Windows (x64) only; the backend is built as amd64.
 
 Prerequisites: Rust (MSVC toolchain), Node 20+, Go (version in `go.mod`), WebView2 runtime.
 

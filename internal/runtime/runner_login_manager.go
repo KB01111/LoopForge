@@ -309,12 +309,7 @@ func writeRunnerLoginState(path string, value any) error {
 	if err := os.Rename(f.Name(), path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return sysx.SyncDir(filepath.Dir(path))
 }
 
 type runnerLoginReceipt struct {

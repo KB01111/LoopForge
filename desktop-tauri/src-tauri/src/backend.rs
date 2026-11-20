@@ -5,6 +5,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -12,8 +13,22 @@ use crate::config::{app_dir, Config};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(90);
 
+/// A backend process we launched, with the settings it was started with.
+struct Running {
+    child: Child,
+    dsn: String,
+    port: u16,
+    secret: String,
+    /// Owns the process tree; dropping it kills the backend and everything it spawned.
+    _job: job::Job,
+}
+
 pub struct Backend {
-    child: Mutex<Option<Child>>,
+    running: Mutex<Option<Running>>,
+    /// Serialises start attempts so two never race for the port.
+    lifecycle: Mutex<()>,
+    /// Bumped by `stop`; an in-flight start that sees a change cancels itself.
+    generation: AtomicU64,
 }
 
 fn log_path() -> PathBuf {
@@ -55,42 +70,68 @@ fn port_in_use(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
 }
 
-/// Minimal HTTP GET against `/api/health`; true on a 200 response.
-fn health_ok(port: u16) -> bool {
+/// GETs `/api/health`; returns the backend pid when the response is `200` with a JSON body.
+fn health_pid(port: u16) -> Option<u32> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let Ok(mut s) = TcpStream::connect_timeout(&addr, Duration::from_millis(500)) else {
-        return false;
-    };
-    let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
-    let _ = s.set_write_timeout(Some(Duration::from_secs(2)));
-    if s.write_all(b"GET /api/health HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n").is_err() {
-        return false;
+    let mut s = TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
+    s.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
+    s.set_write_timeout(Some(Duration::from_secs(2))).ok()?;
+    s.write_all(b"GET /api/health HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").ok()?;
+    let mut raw = Vec::new();
+    s.take(4096).read_to_end(&mut raw).ok()?;
+    let text = String::from_utf8_lossy(&raw);
+    let status_line = text.lines().next()?;
+    let mut parts = status_line.split_whitespace();
+    if !parts.next()?.starts_with("HTTP/") || parts.next()? != "200" {
+        return None;
     }
-    let mut buf = [0u8; 32];
-    let n = s.read(&mut buf).unwrap_or(0);
-    std::str::from_utf8(&buf[..n]).map(|h| h.contains(" 200")).unwrap_or(false)
+    let body = text.split("\r\n\r\n").nth(1)?;
+    let after = body.split("\"pid\":").nth(1)?.trim_start();
+    let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+fn terminate(mut r: Running) {
+    let _ = r.child.kill();
+    let _ = r.child.wait();
+    // Dropping `r` closes the job object, which kills any agent processes left behind.
 }
 
 impl Backend {
     pub fn new() -> Self {
-        Self { child: Mutex::new(None) }
+        Self { running: Mutex::new(None), lifecycle: Mutex::new(()), generation: AtomicU64::new(0) }
     }
 
     pub fn is_running(&self) -> bool {
-        let mut g = self.child.lock().unwrap();
+        let mut g = self.running.lock().unwrap();
         match g.as_mut() {
-            Some(c) => matches!(c.try_wait(), Ok(None)),
+            Some(r) => matches!(r.child.try_wait(), Ok(None)),
             None => false,
         }
     }
 
     /// Starts the backend if needed and blocks until it answers its health check.
+    /// A healthy backend started with different settings is replaced.
     pub fn start(&self, cfg: &Config, resource_dir: Option<&Path>) -> Result<(), String> {
-        if self.is_running() && health_ok(cfg.port) {
-            return Ok(());
+        let _life = self.lifecycle.lock().unwrap();
+        let generation = self.generation.load(Ordering::SeqCst);
+        let dsn = cfg.mysql_dsn.trim().to_string();
+
+        {
+            let mut g = self.running.lock().unwrap();
+            if let Some(r) = g.as_mut() {
+                let alive = matches!(r.child.try_wait(), Ok(None));
+                let same = r.dsn == dsn && r.port == cfg.port && r.secret == cfg.session_secret;
+                if alive && same && health_pid(cfg.port) == Some(r.child.id()) {
+                    return Ok(());
+                }
+            }
+            if let Some(r) = g.take() {
+                terminate(r);
+            }
         }
-        self.stop();
-        if cfg.mysql_dsn.trim().is_empty() {
+
+        if dsn.is_empty() {
             return Err("No MySQL database is configured yet.".into());
         }
         if port_in_use(cfg.port) {
@@ -117,12 +158,14 @@ impl Backend {
         let log_err: File = log.try_clone().map_err(|e| e.to_string())?;
 
         let mut cmd = Command::new(&bin);
-        cmd.arg("-addr")
+        cmd.arg("-role")
+            .arg("all") // never inherit a worker-only role from the parent environment
+            .arg("-addr")
             // Loopback only: the desktop backend must not be reachable from the LAN.
             .arg(format!("127.0.0.1:{}", cfg.port))
             .current_dir(&data_dir)
             .env("AGENTFLOW_HTTP_PORT", cfg.port.to_string())
-            .env("AGENTFLOW_MYSQL_DSN", cfg.mysql_dsn.trim())
+            .env("AGENTFLOW_MYSQL_DSN", &dsn)
             .env("AGENTFLOW_SESSION_SECRET", &cfg.session_secret)
             .stdin(Stdio::null())
             .stdout(Stdio::from(log))
@@ -135,22 +178,33 @@ impl Backend {
         let mut child = cmd
             .spawn()
             .map_err(|e| format!("Failed to start backend {}: {e}", bin.display()))?;
-        #[cfg(windows)]
-        job::assign(&child);
+        let job = match job::Job::adopt(&child) {
+            Ok(j) => j,
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("Could not supervise the backend process: {e}"));
+            }
+        };
+        let pid = child.id();
+        let mut running = Running { child, dsn, port: cfg.port, secret: cfg.session_secret.clone(), _job: job };
 
         let started = Instant::now();
         while started.elapsed() < STARTUP_TIMEOUT {
-            if let Ok(Some(status)) = child.try_wait() {
+            if self.generation.load(Ordering::SeqCst) != generation {
+                terminate(running);
+                return Err("Backend start was cancelled.".into());
+            }
+            if let Ok(Some(status)) = running.child.try_wait() {
                 return Err(format!("The backend exited during startup ({status}).\n{}", self.log_tail(15)));
             }
-            if health_ok(cfg.port) {
-                *self.child.lock().unwrap() = Some(child);
+            if health_pid(cfg.port) == Some(pid) {
+                *self.running.lock().unwrap() = Some(running);
                 return Ok(());
             }
             std::thread::sleep(Duration::from_millis(250));
         }
-        let _ = child.kill();
-        let _ = child.wait();
+        terminate(running);
         Err(format!(
             "The backend did not become ready within {}s.\n{}",
             STARTUP_TIMEOUT.as_secs(),
@@ -158,10 +212,11 @@ impl Backend {
         ))
     }
 
+    /// Stops the backend and cancels any start that is still waiting for readiness.
     pub fn stop(&self) {
-        if let Some(mut c) = self.child.lock().unwrap().take() {
-            let _ = c.kill();
-            let _ = c.wait();
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        if let Some(r) = self.running.lock().unwrap().take() {
+            terminate(r);
         }
     }
 
@@ -179,51 +234,66 @@ impl Backend {
     }
 }
 
-/// Windows job object: the backend (and every CLI/agent process it spawns) is killed
-/// when the desktop app exits for any reason, including a crash or End Task.
+/// Windows job object, one per backend instance: closing it (on stop, or when the desktop
+/// app exits or crashes) kills the backend and every CLI/agent process it spawned.
 #[cfg(windows)]
 mod job {
     use std::os::windows::io::AsRawHandle;
     use std::process::Child;
-    use std::sync::OnceLock;
 
-    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::*;
 
-    static JOB: OnceLock<usize> = OnceLock::new();
+    pub struct Job(HANDLE);
 
-    fn job() -> Option<HANDLE> {
-        let h = *JOB.get_or_init(|| unsafe {
-            let h = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-            if h.is_null() {
-                return 0;
+    // The handle is only used to close it; it is safe to move between threads.
+    unsafe impl Send for Job {}
+
+    impl Job {
+        pub fn adopt(child: &Child) -> Result<Job, String> {
+            unsafe {
+                let h = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+                if h.is_null() {
+                    return Err("CreateJobObjectW failed".into());
+                }
+                let job = Job(h);
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                if SetInformationJobObject(
+                    h,
+                    JobObjectExtendedLimitInformation,
+                    &info as *const _ as *const _,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                ) == 0
+                {
+                    return Err("SetInformationJobObject failed".into());
+                }
+                if AssignProcessToJobObject(h, child.as_raw_handle() as HANDLE) == 0 {
+                    return Err("AssignProcessToJobObject failed".into());
+                }
+                Ok(job)
             }
-            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            let ok = SetInformationJobObject(
-                h,
-                JobObjectExtendedLimitInformation,
-                &info as *const _ as *const _,
-                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            );
-            if ok == 0 {
-                0
-            } else {
-                h as usize
-            }
-        });
-        if h == 0 {
-            None
-        } else {
-            Some(h as HANDLE)
         }
     }
 
-    pub fn assign(child: &Child) {
-        if let Some(j) = job() {
+    impl Drop for Job {
+        fn drop(&mut self) {
             unsafe {
-                AssignProcessToJobObject(j, child.as_raw_handle() as HANDLE);
+                CloseHandle(self.0);
             }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+mod job {
+    use std::process::Child;
+
+    pub struct Job;
+
+    impl Job {
+        pub fn adopt(_child: &Child) -> Result<Job, String> {
+            Ok(Job)
         }
     }
 }

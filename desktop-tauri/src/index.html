@@ -111,7 +111,8 @@
     $("port").value = cfg.port; $("remote").value = cfg.remote_url || "";
     syncMode();
     var ready = cfg.mode === "remote" ? !!cfg.remote_url : !!cfg.mysql_dsn;
-    if (ready && !settingsOnly) { launch(); } else { show("setup"); }
+    if (cfg.load_error) { show("setup"); showError(cfg.load_error); }
+    else if (ready && !settingsOnly) { launch(); } else { show("setup"); }
   }
   init();
 })();
