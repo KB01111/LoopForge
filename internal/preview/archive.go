@@ -213,7 +213,7 @@ func rejectSpecial(path string, info os.FileInfo) error {
 	if info.IsDir() {
 		return nil
 	}
-	if links, ok := sysx.LinkCount(info); ok && links > 1 {
+	if links, ok := sysx.LinkCount(path, info); ok && links > 1 {
 		return fmt.Errorf("%w: hardlink %s", ErrUnsupportedEntry, path)
 	}
 	return nil

@@ -73,11 +73,43 @@ func UnlockFile(f *os.File) {
 	_ = windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, new(windows.Overlapped))
 }
 
-// LinkCount is not available through os.FileInfo on Windows.
-func LinkCount(os.FileInfo) (uint64, bool) { return 0, false }
+// fileInfoByHandle opens path without following reparse semantics beyond the default and
+// returns its BY_HANDLE_FILE_INFORMATION.
+func fileInfoByHandle(path string) (windows.ByHandleFileInformation, bool) {
+	var d windows.ByHandleFileInformation
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return d, false
+	}
+	h, err := windows.CreateFile(p, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return d, false
+	}
+	defer windows.CloseHandle(h)
+	if err := windows.GetFileInformationByHandle(h, &d); err != nil {
+		return d, false
+	}
+	return d, true
+}
 
-// FileID is not available through os.FileInfo on Windows.
-func FileID(os.FileInfo) (dev, ino uint64, ok bool) { return 0, 0, false }
+// LinkCount returns the NTFS hard-link count of the file at path.
+func LinkCount(path string, _ os.FileInfo) (uint64, bool) {
+	d, ok := fileInfoByHandle(path)
+	if !ok {
+		return 0, false
+	}
+	return uint64(d.NumberOfLinks), true
+}
+
+// FileID returns (volume serial, file index) for the file at path.
+func FileID(path string, _ os.FileInfo) (dev, ino uint64, ok bool) {
+	d, ok := fileInfoByHandle(path)
+	if !ok {
+		return 0, 0, false
+	}
+	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), true
+}
 
 // FileOwner is not available through os.FileInfo on Windows.
 func FileOwner(os.FileInfo) (uint32, bool) { return 0, false }

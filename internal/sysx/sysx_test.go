@@ -37,3 +37,28 @@ func TestProcessAliveSelf(t *testing.T) {
 		t.Fatal("own process should be alive")
 	}
 }
+
+func TestLinkCountAndFileID(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a")
+	if err := os.WriteFile(a, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(a)
+	if n, ok := LinkCount(a, info); !ok || n != 1 {
+		t.Fatalf("LinkCount = %d,%v want 1,true", n, ok)
+	}
+	b := filepath.Join(dir, "b")
+	if err := os.Link(a, b); err != nil {
+		t.Skipf("hard links unsupported: %v", err)
+	}
+	if n, ok := LinkCount(a, info); !ok || n != 2 {
+		t.Fatalf("LinkCount after link = %d,%v want 2,true", n, ok)
+	}
+	d1, i1, ok1 := FileID(a, info)
+	infoB, _ := os.Stat(b)
+	d2, i2, ok2 := FileID(b, infoB)
+	if !ok1 || !ok2 || d1 != d2 || i1 != i2 {
+		t.Fatalf("hard links should share an identity: %v/%v %v/%v", d1, i1, d2, i2)
+	}
+}

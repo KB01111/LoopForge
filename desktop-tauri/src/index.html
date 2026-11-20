@@ -89,13 +89,20 @@
 
   $("save").addEventListener("click", async function () {
     showError("");
+    var raw = $("port").value.trim();
+    var port = Number(raw);
+    if (mode() === "local" && (!/^d+$/.test(raw) || port < 1024 || port > 65535)) {
+      showError("Port must be a whole number from 1024 to 65535.");
+      return;
+    }
+    if (mode() === "remote") { port = parseInt(raw, 10) || 8090; }
     $("save").disabled = true;
     try {
       await invoke("save_config", {
         mode: mode(),
         mysqlDsn: $("dsn").value,
         remoteUrl: $("remote").value,
-        port: parseInt($("port").value, 10) || 8090
+        port: port
       });
       await launch();
     } catch (e) { showError(String(e)); }
@@ -105,7 +112,10 @@
 
   async function init() {
     if (!invoke) { show("setup"); showError("This page must run inside the LoopForge desktop app."); return; }
-    var cfg = await invoke("get_config");
+    var cfg;
+    try { cfg = await invoke("get_config"); }
+    catch (e) { show("setup"); showError("Could not read settings: " + e + "
+Check the values and press Save to retry."); return; }
     document.querySelector("input[name=mode][value=" + cfg.mode + "]").checked = true;
     $("dsn").placeholder = cfg.mysql_dsn ? "(saved — leave blank to keep)" : $("dsn").placeholder;
     $("port").value = cfg.port; $("remote").value = cfg.remote_url || "";

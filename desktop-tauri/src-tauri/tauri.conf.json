@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "identifier": "com.loopforge.desktop",
   "build": {
-    "frontendDist": "../src"
+    "frontendDist": [
+      "../src/index.html"
+    ]
   },
   "app": {
     "withGlobalTauri": true,

@@ -57,8 +57,8 @@ func UnlockFile(f *os.File) {
 	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 }
 
-// LinkCount returns the hard-link count of the file behind info, when known.
-func LinkCount(info os.FileInfo) (uint64, bool) {
+// LinkCount returns the hard-link count of the file at path (described by info), when known.
+func LinkCount(_ string, info os.FileInfo) (uint64, bool) {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return 0, false
@@ -66,8 +66,8 @@ func LinkCount(info os.FileInfo) (uint64, bool) {
 	return uint64(st.Nlink), true
 }
 
-// FileID returns a (device, inode) identity for info, when the platform exposes one.
-func FileID(info os.FileInfo) (dev, ino uint64, ok bool) {
+// FileID returns a (device, inode) identity for the file at path, when the platform exposes one.
+func FileID(_ string, info os.FileInfo) (dev, ino uint64, ok bool) {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return 0, 0, false

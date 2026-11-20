@@ -136,26 +136,33 @@ async fn launch(state: tauri::State<'_, AppState>, app: AppHandle) -> Result<Str
     }
     let resource_dir = app.path().resource_dir().ok();
     let state_app = app.clone();
+    let start_cfg = cfg.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let st = state_app.state::<AppState>();
-        st.backend.start(&cfg, resource_dir.as_deref())
+        st.backend.start(&start_cfg, resource_dir.as_deref())
     })
     .await
     .map_err(|e| e.to_string())??;
-    Ok(format!("http://127.0.0.1:{}/", state.config.lock().unwrap().port))
+    Ok(format!("http://127.0.0.1:{}/", cfg.port))
+}
+
+/// Single restart policy for the command and the tray: stop, then start only in Local mode.
+fn restart_backend_blocking(app: &AppHandle) -> Result<(), String> {
+    let st = app.state::<AppState>();
+    st.backend.stop();
+    let cfg = st.config.lock().unwrap().clone();
+    if cfg.mode != Mode::Local {
+        return Ok(());
+    }
+    let res = app.path().resource_dir().ok();
+    st.backend.start(&cfg, res.as_deref())
 }
 
 #[tauri::command]
 async fn restart_backend(app: AppHandle) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let st = app.state::<AppState>();
-        st.backend.stop();
-        let cfg = st.config.lock().unwrap().clone();
-        let res = app.path().resource_dir().ok();
-        st.backend.start(&cfg, res.as_deref())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || restart_backend_blocking(&app))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -222,14 +229,8 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             "restart" => {
                 let app = app.clone();
                 tauri::async_runtime::spawn_blocking(move || {
-                    let st = app.state::<AppState>();
-                    st.backend.stop();
-                    let cfg = st.config.lock().unwrap().clone();
-                    if cfg.mode == Mode::Local {
-                        let res = app.path().resource_dir().ok();
-                        if let Err(e) = st.backend.start(&cfg, res.as_deref()) {
-                            log::error!("backend restart failed: {e}");
-                        }
+                    if let Err(e) = restart_backend_blocking(&app) {
+                        log::error!("backend restart failed: {e}");
                     }
                 });
             }

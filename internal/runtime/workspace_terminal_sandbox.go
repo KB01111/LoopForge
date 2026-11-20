@@ -225,7 +225,7 @@ func filesystemEnvironmentIdentity(workspace, driver string, environment map[str
 	if err != nil {
 		return "", err
 	}
-	dev, ino, ok := sysx.FileID(info)
+	dev, ino, ok := sysx.FileID(workspace, info)
 	if !ok {
 		return "", fmt.Errorf("workspace filesystem identity unavailable")
 	}
