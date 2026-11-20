@@ -52,6 +52,7 @@ func TestLinkCountAndFileID(t *testing.T) {
 	if err := os.Link(a, b); err != nil {
 		t.Skipf("hard links unsupported: %v", err)
 	}
+	info, _ = os.Stat(a)
 	if n, ok := LinkCount(a, info); !ok || n != 2 {
 		t.Fatalf("LinkCount after link = %d,%v want 2,true", n, ok)
 	}

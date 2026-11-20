@@ -44,7 +44,7 @@ fn is_internal(app: &AppHandle, url: &Url) -> bool {
         _ => {}
     }
     // Bundled setup page: http://tauri.localhost (default port) on Windows.
-    if url.host_str() == Some("tauri.localhost") && url.port().is_none() {
+    if url.scheme() == "http" && url.host_str() == Some("tauri.localhost") && url.port().is_none() {
         return true;
     }
     let state = app.state::<AppState>();
@@ -145,6 +145,10 @@ async fn launch(state: tauri::State<'_, AppState>, app: AppHandle) -> Result<Str
     })
     .await
     .map_err(|e| e.to_string())??;
+    // Settings saved while the backend was starting make this result stale.
+    if state.config.lock().unwrap().port != cfg.port {
+        return Err("Settings changed while the backend was starting; please start again.".into());
+    }
     Ok(format!("http://127.0.0.1:{}/", cfg.port))
 }
 

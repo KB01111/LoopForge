@@ -213,7 +213,12 @@ func rejectSpecial(path string, info os.FileInfo) error {
 	if info.IsDir() {
 		return nil
 	}
-	if links, ok := sysx.LinkCount(path, info); ok && links > 1 {
+	links, ok := sysx.LinkCount(path, info)
+	if !ok {
+		// Fail closed: a file whose link count cannot be read could be a hardlink to a file outside the tree.
+		return fmt.Errorf("%w: link count unavailable for %s", ErrUnsupportedEntry, path)
+	}
+	if links > 1 {
 		return fmt.Errorf("%w: hardlink %s", ErrUnsupportedEntry, path)
 	}
 	return nil
