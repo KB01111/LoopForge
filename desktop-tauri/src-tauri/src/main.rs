@@ -43,14 +43,16 @@ fn is_internal(app: &AppHandle, url: &Url) -> bool {
         "tauri" | "about" | "data" | "blob" => return true,
         _ => {}
     }
-    if url.host_str() == Some("tauri.localhost") {
+    // Bundled setup page: http://tauri.localhost (default port) on Windows.
+    if url.host_str() == Some("tauri.localhost") && url.port().is_none() {
         return true;
     }
     let state = app.state::<AppState>();
     let cfg = state.config.lock().unwrap();
     match cfg.mode {
         Mode::Local => {
-            matches!(url.host_str(), Some("127.0.0.1") | Some("localhost") | Some("[::1]"))
+            // Exactly the origin the backend is loaded from (see launch()).
+            url.host_str() == Some("127.0.0.1")
                 && url.scheme() == "http"
                 && url.port_or_known_default() == Some(cfg.port)
         }

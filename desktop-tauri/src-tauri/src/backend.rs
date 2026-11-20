@@ -199,7 +199,14 @@ impl Backend {
                 return Err(format!("The backend exited during startup ({status}).\n{}", self.log_tail(15)));
             }
             if health_pid(cfg.port) == Some(pid) {
-                *self.running.lock().unwrap() = Some(running);
+                // Recheck under the lock stop() takes, so a stop racing with publication wins.
+                let mut slot = self.running.lock().unwrap();
+                if self.generation.load(Ordering::SeqCst) != generation {
+                    drop(slot);
+                    terminate(running);
+                    return Err("Backend start was cancelled.".into());
+                }
+                *slot = Some(running);
                 return Ok(());
             }
             std::thread::sleep(Duration::from_millis(250));
@@ -214,8 +221,11 @@ impl Backend {
 
     /// Stops the backend and cancels any start that is still waiting for readiness.
     pub fn stop(&self) {
+        let mut slot = self.running.lock().unwrap();
         self.generation.fetch_add(1, Ordering::SeqCst);
-        if let Some(r) = self.running.lock().unwrap().take() {
+        let taken = slot.take();
+        drop(slot);
+        if let Some(r) = taken {
             terminate(r);
         }
     }

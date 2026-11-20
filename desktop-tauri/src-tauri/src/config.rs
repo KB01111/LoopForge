@@ -27,6 +27,9 @@ pub struct Config {
     /// Set when settings could not be loaded or persisted; never written to disk.
     #[serde(skip_deserializing, skip_serializing_if = "String::is_empty")]
     pub load_error: String,
+    /// True when the existing settings file could not be preserved; saving is refused.
+    #[serde(skip)]
+    pub save_blocked: bool,
 }
 
 impl Default for Config {
@@ -38,6 +41,7 @@ impl Default for Config {
             port: 8090,
             session_secret: String::new(),
             load_error: String::new(),
+            save_blocked: false,
         }
     }
 }
@@ -72,19 +76,25 @@ impl Config {
             Ok(bytes) => match serde_json::from_slice::<Config>(&bytes) {
                 Ok(c) => cfg = c,
                 Err(e) => {
-                    let backup = path.with_extension("json.invalid");
+                    let stamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let backup = path.with_extension(format!("json.invalid-{stamp}"));
                     let moved = fs::rename(&path, &backup).is_ok();
                     cfg.load_error = format!(
                         "The saved settings could not be read ({e}). {} Please enter them again.",
                         if moved { format!("The old file was kept as {}.", backup.display()) } else { "The old file was left untouched.".into() }
                     );
                     can_save = moved;
+                    cfg.save_blocked = !moved;
                 }
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => {
                 cfg.load_error = format!("Cannot read {}: {e}", path.display());
                 can_save = false;
+                cfg.save_blocked = true;
             }
         }
         // Environment override helps development and automated setups.
@@ -105,6 +115,11 @@ impl Config {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
+        if self.save_blocked {
+            return Err(std::io::Error::other(
+                "the existing settings file could not be read or backed up; fix it or delete it manually",
+            ));
+        }
         let path = config_path();
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir)?;
