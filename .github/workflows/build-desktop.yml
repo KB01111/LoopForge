@@ -1,0 +1,57 @@
+name: Build Desktop Installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop-tauri/**'
+      - '.github/workflows/build-desktop.yml'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'cmd/agentflow/**'
+  pull_request:
+    paths:
+      - 'desktop-tauri/**'
+      - '.github/workflows/build-desktop.yml'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build Go backend (Windows)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File desktop-tauri/scripts/build-backend.ps1
+
+      - name: Build installers
+        working-directory: desktop-tauri
+        run: |
+          npm install
+          npx tauri build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loopforge-desktop-windows
+          path: |
+            desktop-tauri/src-tauri/target/release/bundle/nsis/*.exe
+            desktop-tauri/src-tauri/target/release/bundle/msi/*.msi

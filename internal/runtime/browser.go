@@ -1,13 +1,13 @@
 package runtime
 
 import (
+	"agentflow/internal/sysx"
 	"bufio"
 	"context"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -347,7 +346,7 @@ func ensureHostBrowser(ctx context.Context, workspace, runID string) (domain.MCP
 			args = append(args, "--no-sandbox", "--disable-dev-shm-usage")
 		}
 		cmd := exec.Command(binary, append(args, "about:blank")...)
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		sysx.SetProcessGroup(cmd)
 		if err := cmd.Start(); err != nil {
 			return domain.MCPServerDefinition{}, fmt.Errorf("启动 Chromium 失败: %w", err)
 		}
@@ -404,11 +403,11 @@ func waitDevToolsActivePort(ctx context.Context, profile string, exited <-chan s
 
 func (b *hostBrowser) stop() {
 	if b.cmd.Process != nil {
-		_ = syscall.Kill(-b.cmd.Process.Pid, syscall.SIGTERM)
+		_ = sysx.SignalGroup(b.cmd.Process.Pid, false)
 		select {
 		case <-b.exited:
 		case <-time.After(3 * time.Second):
-			_ = syscall.Kill(-b.cmd.Process.Pid, syscall.SIGKILL)
+			_ = sysx.SignalGroup(b.cmd.Process.Pid, true)
 		}
 	}
 	_ = os.RemoveAll(b.dir)
@@ -477,15 +476,14 @@ func reapOrphanHostBrowsers() {
 			continue
 		}
 		if record.PID > 0 && processAlive(record.PID) {
-			_ = syscall.Kill(-record.PID, syscall.SIGKILL)
+			_ = sysx.SignalGroup(record.PID, true)
 		}
 		_ = os.RemoveAll(dir)
 	}
 }
 
 func processAlive(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
+	return sysx.ProcessAlive(pid)
 }
 
 // FindChromium locates a Chromium-family binary for host drivers.
@@ -526,7 +524,7 @@ func FindChromium() (string, error) {
 func lookupBrowserEndpoint(ctx context.Context, runID string) (browserEndpoint, bool) {
 	if raw, err := os.ReadFile(filepath.Join(hostBrowserDir(runID), "endpoint.json")); err == nil {
 		var record hostBrowserRecord
-		if json.Unmarshal(raw, &record) == nil && record.PID > 0 && syscall.Kill(record.PID, 0) == nil && hostDevToolsAlive(ctx, record.Port) {
+		if json.Unmarshal(raw, &record) == nil && record.PID > 0 && sysx.ProcessAlive(record.PID) && hostDevToolsAlive(ctx, record.Port) {
 			return browserEndpoint{Kind: "local", WebSocket: record.WebSocket, Workspace: record.Workspace}, true
 		}
 	}

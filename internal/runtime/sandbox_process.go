@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"agentflow/internal/sysx"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,7 +14,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"agentflow/internal/domain"
 )
@@ -196,12 +196,12 @@ func (s *processSandbox) command(ctx context.Context, command CommandSpec, base 
 	if command.OwnProcessGroup {
 		// A conversation CLI is stopped with its whole process group; bwrap's
 		// own PID namespace then takes every descendant down with it.
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		sysx.SetProcessGroup(cmd)
 		cmd.Cancel = func() error {
 			if cmd.Process == nil {
 				return nil
 			}
-			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			return sysx.SignalGroup(cmd.Process.Pid, true)
 		}
 	}
 	switch s.driver {

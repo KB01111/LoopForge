@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"agentflow/internal/domain"
+	"agentflow/internal/sysx"
 	"bytes"
 	"errors"
 	"fmt"
@@ -71,8 +72,8 @@ func runCommand(cmd *exec.Cmd, sink EventSink, commands ...CommandSpec) (string,
 		}
 		err = fmt.Errorf("%w: %w", errProcessNotStarted, err)
 	}
-	if cmd.Process != nil && cmd.SysProcAttr != nil && cmd.SysProcAttr.Setpgid {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if cmd.Process != nil && sysx.HasProcessGroup(cmd) {
+		_ = sysx.SignalGroup(cmd.Process.Pid, true)
 	}
 	outputIncomplete := errors.Is(err, exec.ErrWaitDelay)
 	if errors.Is(err, exec.ErrWaitDelay) {

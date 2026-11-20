@@ -32,3 +32,5 @@ desktop-tauri/src-tauri/.cargo/
 # Go backend build artifacts
 loopforge-backend
 loopforge-backend.exe
+bin/
+src-tauri/gen/

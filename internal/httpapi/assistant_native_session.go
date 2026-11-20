@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"agentflow/internal/sysx"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"agentflow/internal/domain"
 	"agentflow/internal/runtime"
@@ -67,9 +67,9 @@ func openAssistantNativeSession(req assistantRequest, saved domain.AssistantSess
 	if err != nil {
 		return nil, err
 	}
-	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err = sysx.TryLockFile(lock); err != nil {
 		_ = lock.Close()
-		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
+		if err == sysx.ErrLockBusy {
 			return nil, errAssistantNativeBusy
 		}
 		return nil, err
@@ -110,7 +110,7 @@ func openAssistantNativeSession(req assistantRequest, saved domain.AssistantSess
 
 func (n *assistantNativeSession) Close() {
 	if n != nil && n.lock != nil {
-		_ = syscall.Flock(int(n.lock.Fd()), syscall.LOCK_UN)
+		sysx.UnlockFile(n.lock)
 		_ = n.lock.Close()
 		n.lock = nil
 	}

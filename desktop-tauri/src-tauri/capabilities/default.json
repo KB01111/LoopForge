@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for the local setup page only. The platform UI is served by the backend and gets no IPC access.",
+  "windows": ["main"],
+  "local": true,
+  "permissions": ["core:default", "opener:default"]
+}

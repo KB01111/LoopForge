@@ -1,12 +1,12 @@
 package runtime
 
 import (
+	"agentflow/internal/sysx"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 )
 
 type localSandbox struct {
@@ -58,12 +58,12 @@ func (s *localSandbox) command(ctx context.Context, command CommandSpec, base []
 		cmd.Env = upsertEnv(cmd.Env, "PWD", command.WorkingDir)
 	}
 	if command.OwnProcessGroup {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		sysx.SetProcessGroup(cmd)
 		cmd.Cancel = func() error {
 			if cmd.Process == nil {
 				return nil
 			}
-			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			return sysx.SignalGroup(cmd.Process.Pid, true)
 		}
 	}
 	return cmd, nil
