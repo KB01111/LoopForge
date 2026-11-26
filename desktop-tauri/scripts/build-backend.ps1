@@ -2,7 +2,7 @@
 # This script builds the Go backend for Windows
 
 param(
-    [string]$OutputDir = "$(Join-Path $PSScriptRoot "..\..\desktop-tauri\bin")",
+    [string]$OutputDir = "$(Join-Path $PSScriptRoot "..\..\bin")",
     [string]$GOOS = "windows",
     [string]$GOARCH = "amd64"
 )
@@ -29,20 +29,10 @@ $GoVersion = go version
 Write-Host "[INFO] Go version: $GoVersion" -ForegroundColor Green
 
 # Build the backend
-$BuildArgs = @(
-    "build",
-    "-o", $OutputBinary,
-    "-trimpath",
-    "-ldflags", "-s -w",
-    "-C", $ProjectRoot
-)
-
-if ($GOOS -ne "windows") {
-    $BuildArgs += @("-GOOS=$GOOS")
-}
-
-if ($GOARCH -ne "amd64") {
-    $BuildArgs += @("-GOARCH=$GOARCH")
+$AgentFlowDir = Join-Path $ProjectRoot "cmd\agentflow"
+if (-not (Test-Path $AgentFlowDir)) {
+    Write-Host "[ERROR] Could not find cmd\agentflow directory" -ForegroundColor Red
+    exit 1
 }
 
 # Set environment for cross-compilation
@@ -54,16 +44,16 @@ try {
     Write-Host "[INFO] Building agentflow server for $GOOS/$GOARCH..." -ForegroundColor Green
     
     # Change to the agentflow directory
-    $AgentFlowDir = Join-Path $ProjectRoot "cmd\agentflow"
-    if (-not (Test-Path $AgentFlowDir)) {
-        Write-Host "[ERROR] Could not find cmd\agentflow directory" -ForegroundColor Red
-        exit 1
-    }
-    
     Set-Location $AgentFlowDir
     
-    # Build
-    go $BuildArgs
+    # Build with correct flag order
+    $BuildArgs = @(
+        "-trimpath",
+        "-ldflags", "-s -w",
+        "."
+    )
+    
+    go build -o $OutputBinary $BuildArgs
     
     if (-not (Test-Path $OutputBinary)) {
         Write-Host "[ERROR] Build failed - output binary not created" -ForegroundColor Red
