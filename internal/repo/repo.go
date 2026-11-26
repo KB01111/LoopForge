@@ -1,6 +1,7 @@
-// Package repo is the gorm-backed persistence layer of AgentFlow. MySQL is the
-// only production datasource; tests open an in-process sqlite database through
-// the same gorm code paths. There is no second in-memory implementation.
+// Package repo is the gorm-backed persistence layer of AgentFlow. Production
+// deployments support MySQL (team/multi-instance server) and embedded SQLite in
+// WAL mode (local/desktop Tauri). Tests open an in-process sqlite database
+// through the same gorm code paths. There is no second in-memory implementation.
 package repo
 
 import (
@@ -8,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -15,6 +17,7 @@ import (
 
 	"agentflow/internal/domain"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -68,12 +71,30 @@ func (d *deps) sqlExecutionContextJSONText(path string) string {
 }
 
 // locking returns the query with a row-lock clause on MySQL. sqlite serializes
-// writers already (single connection in tests), so no clause is needed there.
+// writers already (single connection pool), so no clause is needed there.
 func (d *deps) locking(q *gorm.DB) *gorm.DB {
 	if d.isMySQL() {
 		return q.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
 	return q
+}
+
+// lockingSkipLocked returns the query with FOR UPDATE SKIP LOCKED on MySQL so
+// concurrent claimers do not block behind each other on the head row.
+func (d *deps) lockingSkipLocked(q *gorm.DB) *gorm.DB {
+	if d.isMySQL() {
+		return q.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+	}
+	return q
+}
+
+// lockingDB applies FOR UPDATE when tx uses the MySQL dialect. Package-level
+// helpers without a *deps receiver use this to stay portable on SQLite.
+func lockingDB(tx *gorm.DB) *gorm.DB {
+	if tx != nil && tx.Dialector != nil && tx.Dialector.Name() == "mysql" {
+		return tx.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	return tx
 }
 
 // CatalogRepo owns the reusable definitions: agents, rules, skills, MCP
@@ -222,16 +243,76 @@ func newStore(db *gorm.DB) *Store {
 	return s
 }
 
-// Open connects the store to MySQL, which is where all state lives. An empty
-// DSN is a configuration error, not a reason to invent state somewhere else.
+// Open connects the store to MySQL or embedded SQLite (WAL mode).
+//
+// Resolution order:
+//  1. Explicit dsn argument: sqlite://, sqlite:, file:, or :memory: opens SQLite;
+//     any other non-empty DSN opens MySQL.
+//  2. Environment variables when dsn is empty:
+//     - AGENTFLOW_DB_DRIVER=sqlite -> opens AGENTFLOW_SQLITE_PATH in WAL mode.
+//     - AGENTFLOW_DB_DRIVER=mysql  -> opens AGENTFLOW_MYSQL_DSN.
+//     - AGENTFLOW_DB_DRIVER unset  -> uses AGENTFLOW_MYSQL_DSN if set, else
+//       AGENTFLOW_SQLITE_PATH if set; refuses to start when neither is configured.
+//
+// Per AGENTS.md, Open performs only connection setup + gorm incremental DDL
+// (no code-side auto-seeding or data migrations).
 func Open(dsn string) (*Store, error) {
 	dsn = strings.TrimSpace(dsn)
-	if dsn == "" {
-		dsn = strings.TrimSpace(os.Getenv("AGENTFLOW_MYSQL_DSN"))
+	if dsn != "" {
+		if isSQLiteDSN(dsn) {
+			return openSQLite(dsn)
+		}
+		return openMySQL(dsn)
 	}
-	if dsn == "" {
-		return nil, errors.New("AGENTFLOW_MYSQL_DSN 未配置：MySQL 是唯一数据源，缺少 DSN 时拒绝启动")
+	driver := strings.ToLower(strings.TrimSpace(os.Getenv("AGENTFLOW_DB_DRIVER")))
+	mysqlDSN := strings.TrimSpace(os.Getenv("AGENTFLOW_MYSQL_DSN"))
+	sqlitePath := strings.TrimSpace(os.Getenv("AGENTFLOW_SQLITE_PATH"))
+	switch driver {
+	case "sqlite":
+		if sqlitePath == "" {
+			return nil, errors.New("AGENTFLOW_SQLITE_PATH 未配置：SQLite 模式需要数据库文件路径")
+		}
+		return openSQLite(sqlitePath)
+	case "mysql":
+		if mysqlDSN == "" {
+			return nil, errors.New("AGENTFLOW_MYSQL_DSN 未配置：MySQL 模式缺少 DSN 时拒绝启动")
+		}
+		return openMySQL(mysqlDSN)
+	case "":
+		if mysqlDSN != "" {
+			if isSQLiteDSN(mysqlDSN) {
+				return openSQLite(mysqlDSN)
+			}
+			return openMySQL(mysqlDSN)
+		}
+		if sqlitePath != "" {
+			return openSQLite(sqlitePath)
+		}
+		return nil, errors.New("AGENTFLOW_MYSQL_DSN 未配置：缺少数据库配置时拒绝启动（服务端请设置 AGENTFLOW_MYSQL_DSN，本地/桌面模式请设置 AGENTFLOW_DB_DRIVER=sqlite 与 AGENTFLOW_SQLITE_PATH）")
+	default:
+		return nil, fmt.Errorf("unsupported AGENTFLOW_DB_DRIVER %q (want mysql or sqlite)", driver)
 	}
+}
+
+// OpenSQLite opens a production SQLite store at the given file path or SQLite
+// URI with WAL mode and concurrency-safe PRAGMAs enabled.
+func OpenSQLite(pathOrDSN string) (*Store, error) {
+	pathOrDSN = strings.TrimSpace(pathOrDSN)
+	if pathOrDSN == "" {
+		return nil, errors.New("sqlite path is required")
+	}
+	return openSQLite(pathOrDSN)
+}
+
+func isSQLiteDSN(dsn string) bool {
+	lower := strings.ToLower(strings.TrimSpace(dsn))
+	return lower == ":memory:" ||
+		strings.HasPrefix(lower, "sqlite://") ||
+		strings.HasPrefix(lower, "sqlite:") ||
+		strings.HasPrefix(lower, "file:")
+}
+
+func openMySQL(dsn string) (*Store, error) {
 	if !strings.Contains(dsn, "charset=") {
 		if strings.Contains(dsn, "?") {
 			dsn += "&charset=utf8mb4&collation=utf8mb4_unicode_ci"
@@ -266,6 +347,158 @@ func Open(dsn string) (*Store, error) {
 	return s, nil
 }
 
+// sqliteWALPragmas lists the production PRAGMAs applied to every SQLite store.
+// Single-connection pooling (MaxOpenConns=1) serializes in-process writes cleanly
+// to avoid SQLITE_BUSY, while WAL + busy_timeout=5000 keeps external readers
+// (e.g. CLI tools or backup utilities) non-blocking and crash-safe.
+var sqliteWALPragmas = []string{
+	"PRAGMA journal_mode = WAL",
+	"PRAGMA busy_timeout = 5000",
+	"PRAGMA synchronous = NORMAL",
+	"PRAGMA foreign_keys = ON",
+	"PRAGMA cache_size = -64000",
+	"PRAGMA temp_store = MEMORY",
+}
+
+func openSQLite(raw string) (*Store, error) {
+	dsn, fsPath, isMemory, err := normalizeSQLiteDSN(raw)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite dsn: %w", err)
+	}
+	if !isMemory && fsPath != "" {
+		dir := filepath.Dir(fsPath)
+		if dir != "" && dir != "." {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return nil, fmt.Errorf("sqlite mkdir %s: %w", dir, err)
+			}
+		}
+	}
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+		TranslateError: true,
+		Logger:         logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sqlite open: %w", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("sqlite db handle: %w", err)
+	}
+	// Serialize in-process writers through one pooled connection so concurrent
+	// engine/runner/assistant goroutines never hit SQLITE_BUSY while WAL +
+	// busy_timeout preserve crash safety and cross-process read concurrency.
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxLifetime(0)
+	if err := sqlDB.Ping(); err != nil {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("sqlite ping: %w", err)
+	}
+	for _, pragma := range sqliteWALPragmas {
+		if err := db.Exec(pragma).Error; err != nil {
+			_ = sqlDB.Close()
+			return nil, fmt.Errorf("sqlite %s: %w", pragma, err)
+		}
+	}
+	s := newStore(db)
+	// Incremental DDL only (same contract as MySQL): no auto-seeding or data
+	// migrations inside repo.Open().
+	if err := autoMigrateIncremental(s.DB); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("sqlite auto migrate: %w", err)
+	}
+	return s, nil
+}
+
+// normalizeSQLiteDSN accepts a filesystem path, :memory:, file: URI, sqlite://
+// URI, or sqlite: URI and returns a glebarez/sqlite-compatible DSN plus the
+// local filesystem path (empty for in-memory databases).
+func normalizeSQLiteDSN(raw string) (dsn, fsPath string, isMemory bool, err error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", "", false, errors.New("empty sqlite path")
+	}
+	lower := strings.ToLower(raw)
+	if lower == ":memory:" {
+		return ":memory:", "", true, nil
+	}
+	if strings.HasPrefix(lower, "file:") {
+		rest := raw[len("file:"):]
+		pathPart, query, _ := strings.Cut(rest, "?")
+		isMemory = strings.EqualFold(pathPart, ":memory:") || strings.Contains(strings.ToLower(query), "mode=memory")
+		if !isMemory && pathPart != "" {
+			fsPath = cleanSQLiteFilePath(pathPart)
+		}
+		return appendSQLitePragmaParams(raw), fsPath, isMemory, nil
+	}
+	var pathPart, query string
+	var hasQuery bool
+	switch {
+	case strings.HasPrefix(lower, "sqlite://"):
+		pathPart, query, hasQuery = strings.Cut(raw[len("sqlite://"):], "?")
+	case strings.HasPrefix(lower, "sqlite:"):
+		pathPart, query, hasQuery = strings.Cut(raw[len("sqlite:"):], "?")
+	default:
+		pathPart = raw
+	}
+	if strings.EqualFold(strings.TrimSpace(pathPart), ":memory:") || strings.Contains(strings.ToLower(query), "mode=memory") {
+		if hasQuery && query != "" {
+			return appendSQLitePragmaParams("file:" + pathPart + "?" + query), "", true, nil
+		}
+		return ":memory:", "", true, nil
+	}
+	fsPath = cleanSQLiteFilePath(pathPart)
+	if fsPath == "" {
+		return "", "", false, fmt.Errorf("invalid sqlite path %q", raw)
+	}
+	uriPath := filepath.ToSlash(fsPath)
+	base := "file:" + uriPath
+	if hasQuery && query != "" {
+		base += "?" + query
+	}
+	return appendSQLitePragmaParams(base), fsPath, false, nil
+}
+
+func cleanSQLiteFilePath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	// Handle sqlite:///C:/path/to.db on Windows where URL parsing leaves a
+	// leading slash before the drive letter.
+	if len(p) >= 3 && p[0] == '/' && ((p[1] >= 'A' && p[1] <= 'Z') || (p[1] >= 'a' && p[1] <= 'z')) && p[2] == ':' {
+		p = p[1:]
+	}
+	return filepath.Clean(filepath.FromSlash(p))
+}
+
+func appendSQLitePragmaParams(dsn string) string {
+	lower := strings.ToLower(dsn)
+	params := []struct{ key, expr string }{
+		{"busy_timeout", "_pragma=busy_timeout(5000)"},
+		{"journal_mode", "_pragma=journal_mode(WAL)"},
+		{"synchronous", "_pragma=synchronous(NORMAL)"},
+		{"foreign_keys", "_pragma=foreign_keys(ON)"},
+		{"cache_size", "_pragma=cache_size(-64000)"},
+		{"temp_store", "_pragma=temp_store(MEMORY)"},
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	var b strings.Builder
+	b.WriteString(dsn)
+	for _, p := range params {
+		if strings.Contains(lower, p.key) {
+			continue
+		}
+		b.WriteString(sep)
+		b.WriteString(p.expr)
+		sep = "&"
+	}
+	return b.String()
+}
+
 // Close releases the underlying connection pool. The gorm handle is kept so
 // in-flight background goroutines fail gracefully ("sql: database is closed")
 // instead of panicking on a nil handle.
@@ -279,11 +512,21 @@ func (s *Store) Close() {
 }
 
 func (s *Store) StorageInfo() map[string]any {
-	return map[string]any{
-		"driver":   s.DB.Dialector.Name(),
-		"database": true,
-		"note":     "所有状态都在 MySQL：项目、Issue、SOP、运行记录、助手对话和定时任务都直接读写数据库。",
+	driver := ""
+	if s.DB != nil && s.DB.Dialector != nil {
+		driver = s.DB.Dialector.Name()
 	}
+	note := "所有状态都在 MySQL：项目、Issue、SOP、运行记录、助手对话和定时任务都直接读写数据库。"
+	info := map[string]any{
+		"driver":   driver,
+		"database": true,
+	}
+	if driver == "sqlite" {
+		note = "所有状态都在本地 SQLite (WAL) 数据库：项目、Issue、SOP、运行记录、助手对话和定时任务均持久化到本地单文件数据库。"
+		info["journalMode"] = "WAL"
+	}
+	info["note"] = note
+	return info
 }
 
 func IssueBoundToTracker(issue domain.Issue) bool {

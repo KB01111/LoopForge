@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"strings"
 )
 
@@ -21,7 +20,7 @@ func (r *AssistantRepo) SetAssistantRuntimeMode(userID int64, id, projectID, mod
 	}
 	return r.DB.Transaction(func(tx *gorm.DB) error {
 		var row assistantSessionRow
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", assistantRecordID(id), userID).Take(&row).Error; err != nil {
+		if err := r.locking(tx).Where("id = ? AND user_id = ?", assistantRecordID(id), userID).Take(&row).Error; err != nil {
 			return err
 		}
 		item := decodeAssistantSession(row)
