@@ -1,0 +1,7 @@
+{"type":"init","session_id":"gem-sess-123","model":"gemini-2.5-pro"}
+{"type":"message","role":"assistant","content":"Checking ","delta":true}
+{"type":"message","role":"assistant","content":"files...","delta":true}
+{"type":"tool_use","tool_id":"t-1","tool_name":"read_file","parameters":{"path":"go.mod"}}
+{"type":"tool_result","tool_id":"t-1","status":"success","output":"module agentflow"}
+{"type":"message","role":"assistant","content":"Module is agentflow.","delta":false}
+{"type":"result","status":"success","stats":{"input_tokens":150,"output_tokens":30,"cached":25}}

@@ -38,6 +38,7 @@ type Run struct {
 	// equals. Legacy runs only carry Repository.
 	Repositories      []RepositoryContext `json:"repositories,omitempty"`
 	ExecutionContext  TelemetryContext    `json:"executionContext,omitempty"`
+	HarnessOverride   *HarnessOverride    `json:"harnessOverride,omitempty"`
 	Nodes             map[string]*NodeRun `json:"nodes"`
 	Events            []RunEvent          `json:"events"`
 	Telemetry         []TelemetryEvent    `json:"telemetry,omitempty"`
