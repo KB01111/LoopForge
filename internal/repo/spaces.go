@@ -10,7 +10,6 @@ import (
 	"agentflow/internal/domain"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // SpacesRepo stores conversation state layered on chat rooms: the linked
@@ -113,7 +112,7 @@ func (r *SpacesRepo) PutSpaceArtifact(v domain.SpaceArtifact, baseVersion int) (
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		now := time.Now().UTC()
 		var row spaceArtifactRow
-		err := tx.Table("space_artifacts").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", v.ID).Take(&row).Error
+		err := r.locking(tx.Table("space_artifacts")).Where("id = ?", v.ID).Take(&row).Error
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			if baseVersion != 0 {

@@ -544,7 +544,7 @@ func (r *RunnersRepo) ClaimRunnerTask(runnerID string, providers []string, now t
 	var found bool
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		var rows []runnerTaskRow
-		if err := r.locking(tx).
+		if err := r.lockingSkipLocked(tx).
 			Where("status = ? AND (runner_id = '' OR runner_id = ?) AND provider IN ?", domain.RunnerTaskQueued, runnerID, allowed).
 			Order("created_at").Limit(1).
 			Find(&rows).Error; err != nil {

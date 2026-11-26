@@ -8,7 +8,6 @@ import (
 	"agentflow/internal/domain"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // updateConversationWorkspaceRun rewrites only the named JSON columns of a
@@ -22,7 +21,7 @@ func (r *RunsRepo) updateConversationWorkspaceRun(runID string, mutate func(row 
 	changed := false
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		var row runRow
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "kind", "execution_context", "usage_json").Where("id = ?", runID).Take(&row).Error; err != nil {
+		if err := r.locking(tx).Select("id", "kind", "execution_context", "usage_json").Where("id = ?", runID).Take(&row).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return nil
 			}
