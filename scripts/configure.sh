@@ -7,15 +7,26 @@ p=pathlib.Path('.env')
 data_dir=os.path.abspath(os.environ.get('LOOPFORGE_DATA_DIR','.data'))
 if p.exists():
  text=p.read_text()
+ added=[]
  if 'LOOPFORGE_DATA_DIR=' not in text:
-  with p.open('a') as f: f.write(f'\nLOOPFORGE_DATA_DIR={shlex.quote(data_dir)}\n')
-  print('Added LOOPFORGE_DATA_DIR to existing .env')
+  added.append(f'LOOPFORGE_DATA_DIR={shlex.quote(data_dir)}')
+ if 'LOOPFORGE_BIFROST_PORT=' not in text:
+  added.append(f"LOOPFORGE_BIFROST_PORT={shlex.quote(os.environ.get('LOOPFORGE_BIFROST_PORT','8091'))}")
+ if 'BIFROST_VIRTUAL_KEY=' not in text:
+  added.append(f"BIFROST_VIRTUAL_KEY={shlex.quote('sk-bf-'+secrets.token_hex(24))}")
+ if 'BIFROST_ENCRYPTION_KEY=' not in text:
+  added.append(f"BIFROST_ENCRYPTION_KEY={shlex.quote(secrets.token_hex(32))}")
+ if 'AGENTFLOW_BIFROST_MODE=' not in text:
+  added.append(f"AGENTFLOW_BIFROST_MODE={shlex.quote(os.environ.get('AGENTFLOW_BIFROST_MODE','fallback-when-empty'))}")
+ if added:
+  with p.open('a') as f: f.write('\n'+'\n'.join(added)+'\n')
+  print('Updated existing .env with missing settings')
  else:
   print('Keeping existing .env')
 else:
  password=secrets.token_hex(24)
- http_port=os.environ.get('AGENTFLOW_HTTP_PORT','8090');mysql_port=os.environ.get('LOOPFORGE_MYSQL_PORT','33315')
- data={'LOOPFORGE_DB_PASSWORD':password,'LOOPFORGE_DB_ROOT_PASSWORD':secrets.token_hex(24),'LOOPFORGE_MYSQL_PORT':mysql_port,'COMPOSE_PROJECT_NAME':os.environ.get('COMPOSE_PROJECT_NAME','loopforge'),'AGENTFLOW_HTTP_PORT':http_port,'AGENTFLOW_MYSQL_DSN':f'loopforge:{password}@tcp(127.0.0.1:{mysql_port})/loopforge','AGENTFLOW_SESSION_SECRET':secrets.token_hex(32),'AGENTFLOW_AUTH_REQUIRED':'true','LOOPFORGE_DATA_DIR':data_dir,'LOOPFORGE_BIND':os.environ.get('LOOPFORGE_BIND','0.0.0.0'),'LOOPFORGE_PUBLIC_URL':os.environ.get('LOOPFORGE_PUBLIC_URL',''),'LOOPFORGE_IMAGE':os.environ.get('LOOPFORGE_IMAGE',''),'AGENTFLOW_GITHUB_CLIENT_ID':os.environ.get('AGENTFLOW_GITHUB_CLIENT_ID','')}
+ http_port=os.environ.get('AGENTFLOW_HTTP_PORT','8090');mysql_port=os.environ.get('LOOPFORGE_MYSQL_PORT','33315');bifrost_port=os.environ.get('LOOPFORGE_BIFROST_PORT','8091')
+ data={'LOOPFORGE_DB_PASSWORD':password,'LOOPFORGE_DB_ROOT_PASSWORD':secrets.token_hex(24),'LOOPFORGE_MYSQL_PORT':mysql_port,'COMPOSE_PROJECT_NAME':os.environ.get('COMPOSE_PROJECT_NAME','loopforge'),'AGENTFLOW_HTTP_PORT':http_port,'AGENTFLOW_MYSQL_DSN':f'loopforge:{password}@tcp(127.0.0.1:{mysql_port})/loopforge','AGENTFLOW_SESSION_SECRET':secrets.token_hex(32),'AGENTFLOW_AUTH_REQUIRED':'true','LOOPFORGE_DATA_DIR':data_dir,'LOOPFORGE_BIND':os.environ.get('LOOPFORGE_BIND','0.0.0.0'),'LOOPFORGE_PUBLIC_URL':os.environ.get('LOOPFORGE_PUBLIC_URL',''),'LOOPFORGE_IMAGE':os.environ.get('LOOPFORGE_IMAGE',''),'AGENTFLOW_GITHUB_CLIENT_ID':os.environ.get('AGENTFLOW_GITHUB_CLIENT_ID',''),'LOOPFORGE_BIFROST_PORT':bifrost_port,'AGENTFLOW_BIFROST_MODE':os.environ.get('AGENTFLOW_BIFROST_MODE','fallback-when-empty'),'BIFROST_VIRTUAL_KEY':'sk-bf-'+secrets.token_hex(24),'BIFROST_ENCRYPTION_KEY':secrets.token_hex(32)}
  fd=os.open(str(p),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
  with os.fdopen(fd,'w') as f: f.write(''.join(f'{k}={shlex.quote(v)}\n' for k,v in data.items()))
  print('Created .env with unique local secrets')

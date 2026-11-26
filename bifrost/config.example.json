@@ -1,0 +1,186 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "encryption_key": "env.BIFROST_ENCRYPTION_KEY",
+  "client": {
+    "enforce_auth_on_inference": true,
+    "drop_excess_requests": false,
+    "initial_pool_size": 64,
+    "enable_logging": true
+  },
+  "providers": {
+    "openai": {
+      "keys": [
+        {
+          "name": "openai-primary",
+          "value": "env.OPENAI_API_KEY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "default_request_timeout_in_seconds": 120,
+        "max_retries": 2
+      }
+    },
+    "anthropic": {
+      "keys": [
+        {
+          "name": "anthropic-primary",
+          "value": "env.ANTHROPIC_API_KEY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "default_request_timeout_in_seconds": 180,
+        "max_retries": 2
+      }
+    },
+    "gemini": {
+      "keys": [
+        {
+          "name": "gemini-primary",
+          "value": "env.GEMINI_API_KEY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "default_request_timeout_in_seconds": 120,
+        "max_retries": 2
+      }
+    },
+    "deepseek": {
+      "keys": [
+        {
+          "name": "deepseek-primary",
+          "value": "env.DEEPSEEK_API_KEY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "https://api.deepseek.com",
+        "default_request_timeout_in_seconds": 120,
+        "max_retries": 2
+      }
+    },
+    "openrouter": {
+      "keys": [
+        {
+          "name": "openrouter-primary",
+          "value": "env.OPENROUTER_API_KEY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "default_request_timeout_in_seconds": 120,
+        "max_retries": 2
+      }
+    },
+    "ollama": {
+      "keys": [
+        {
+          "name": "ollama-local",
+          "value": "ollama-local",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "http://host.docker.internal:11434/v1",
+        "allow_private_network": true,
+        "default_request_timeout_in_seconds": 180
+      }
+    }
+  },
+  "governance": {
+    "budgets": [
+      {
+        "id": "loopforge-monthly-global",
+        "max_limit": 500.0,
+        "reset_duration": "1M"
+      }
+    ],
+    "virtual_keys": [
+      {
+        "id": "vk-loopforge-default",
+        "name": "loopforge-default",
+        "value": "env.BIFROST_VIRTUAL_KEY",
+        "is_active": true,
+        "budgets": [
+          {
+            "max_limit": 200.0,
+            "reset_duration": "1M"
+          }
+        ],
+        "provider_configs": [
+          {
+            "provider": "anthropic",
+            "allowed_models": ["*"],
+            "weight": 1.0
+          },
+          {
+            "provider": "openai",
+            "allowed_models": ["*"],
+            "weight": 1.0
+          },
+          {
+            "provider": "gemini",
+            "allowed_models": ["*"],
+            "weight": 1.0
+          },
+          {
+            "provider": "deepseek",
+            "allowed_models": ["*"],
+            "weight": 0.8
+          },
+          {
+            "provider": "openrouter",
+            "allowed_models": ["*"],
+            "weight": 0.5
+          },
+          {
+            "provider": "ollama",
+            "allowed_models": ["*"],
+            "weight": 0.5
+          }
+        ],
+        "fallbacks": [
+          {
+            "provider": "openai",
+            "model": "gpt-5.4"
+          },
+          {
+            "provider": "gemini",
+            "model": "gemini-2.5-pro"
+          },
+          {
+            "provider": "deepseek",
+            "model": "deepseek-chat"
+          }
+        ]
+      }
+    ],
+    "routing_rules": [
+      {
+        "name": "loopforge-eval-fast-tier",
+        "scope": "global",
+        "cel_expression": "request.headers['x-loopforge-tier'] == 'eval'",
+        "targets": [
+          {
+            "provider": "openai",
+            "model": "gpt-5.4",
+            "weight": 1
+          },
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-6",
+            "weight": 1
+          }
+        ]
+      }
+    ]
+  }
+}

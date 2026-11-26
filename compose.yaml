@@ -48,6 +48,12 @@ services:
       AGENTFLOW_GATE_MCP_BINARY: /app/bin/agentflow-gate-mcp-{os}-{arch}
       # Claude Code is not bundled; it is installed from npm here on first use.
       AGENTFLOW_RUNTIME_CLI_DIR: ${LOOPFORGE_DATA_DIR}/cli
+      # Bifrost LLM router/gateway integration (canonical port 8091).
+      AGENTFLOW_BIFROST_URL: ${AGENTFLOW_BIFROST_URL:-http://bifrost:8091}
+      AGENTFLOW_BIFROST_SANDBOX_URL: ${AGENTFLOW_BIFROST_SANDBOX_URL:-http://bifrost:8091}
+      AGENTFLOW_BIFROST_VIRTUAL_KEY: ${BIFROST_VIRTUAL_KEY:-}
+      AGENTFLOW_BIFROST_ADMIN_TOKEN: ${BIFROST_ADMIN_TOKEN:-}
+      AGENTFLOW_BIFROST_MODE: ${AGENTFLOW_BIFROST_MODE:-fallback-when-empty}
     command: ["-workspaces", "${LOOPFORGE_DATA_DIR}/workspaces"]
     volumes:
       - platform-data:/data
@@ -65,6 +71,32 @@ services:
       retries: 60
       start_period: 10s
     restart: unless-stopped
+  bifrost:
+    profiles: [platform, bifrost]
+    image: ${BIFROST_IMAGE:-maximhq/bifrost:latest}
+    ports:
+      - "127.0.0.1:${LOOPFORGE_BIFROST_PORT:-8091}:8091"
+    environment:
+      APP_PORT: "8091"
+      APP_HOST: "0.0.0.0"
+      APP_DIR: /app/data
+      BIFROST_ENCRYPTION_KEY: ${BIFROST_ENCRYPTION_KEY:-}
+      BIFROST_VIRTUAL_KEY: ${BIFROST_VIRTUAL_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    volumes:
+      - bifrost-data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8091/health >/dev/null 2>&1 || curl -fsS http://127.0.0.1:8091/health >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    restart: unless-stopped
 volumes:
   mysql-data:
   platform-data:
+  bifrost-data:
