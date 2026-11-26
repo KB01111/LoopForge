@@ -1,0 +1,11 @@
+{"type":"session","id":"pa-sess-001"}
+{"type":"turn_start"}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"Planning recursive investigation."}}
+{"type":"repl_exec","callId":"repl-1","code":"files = glob('internal/**/*.go'); len(files)"}
+{"type":"repl_output","callId":"repl-1","stdout":"42","isError":false}
+{"type":"rlm_spawn","subagentId":"sub-1","task":"Audit auth middleware","depth":1,"model":"agentflow/claude-sonnet-4-6"}
+{"type":"rlm_complete","subagentId":"sub-1","status":"completed","result":"Auth middleware verified clean.","usage":{"input":120,"output":45}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"Investigation complete."}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Investigation complete."}],"usage":{"input":200,"output":60,"cacheRead":10}}}
+{"type":"refine_applied","summary":"Saved repository layout hint to memory"}
+{"type":"agent_end"}

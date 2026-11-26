@@ -1,0 +1,7 @@
+{"kind":"message-start","session_id":"goose-sess-77","model":"claude-sonnet-4-6"}
+{"kind":"block","block":{"type":"thinking","thinking":"Inspecting project structure."}}
+{"kind":"block","block":{"type":"tool_use","id":"call-1","name":"developer__shell","input":{"command":"go version"}}}
+{"kind":"block","block":{"type":"tool_result","tool_use_id":"call-1","is_error":false,"content":"go version go1.26.11"}}
+{"kind":"block","block":{"type":"text","text":"Go 1.26.11 detected."}}
+{"kind":"usage","usage":{"input_tokens":90,"output_tokens":20}}
+{"kind":"message-end"}

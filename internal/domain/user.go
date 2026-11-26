@@ -232,12 +232,15 @@ const (
 // AgentCLIProtocolOptions lists the protocols each agent CLI speaks against a
 // user Base URL; the first one is the default. Cursor only talks to Cursor.
 var AgentCLIProtocolOptions = map[string][]string{
-	"opencode": {AgentCLIProtocolChat, AgentCLIProtocolResponses, AgentCLIProtocolMessages},
-	"kimi":     {AgentCLIProtocolChat, AgentCLIProtocolResponses, AgentCLIProtocolMessages},
-	"pi":       {AgentCLIProtocolChat, AgentCLIProtocolResponses, AgentCLIProtocolMessages},
-	"dsh":      {AgentCLIProtocolChat, AgentCLIProtocolResponses, AgentCLIProtocolMessages},
-	"zcode":    {AgentCLIProtocolMessages, AgentCLIProtocolChat, AgentCLIProtocolResponses},
-	"agy":      {AgentCLIProtocolGemini, AgentCLIProtocolChat},
+	"opencode":    {AgentCLIProtocolChat, AgentCLIProtocolResponses, AgentCLIProtocolMessages},
+	"kimi":        {AgentCLIProtocolChat, AgentCLIProtocolResponses, AgentCLIProtocolMessages},
+	"pi":          {AgentCLIProtocolChat, AgentCLIProtocolResponses, AgentCLIProtocolMessages},
+	"dsh":         {AgentCLIProtocolChat, AgentCLIProtocolResponses, AgentCLIProtocolMessages},
+	"zcode":       {AgentCLIProtocolMessages, AgentCLIProtocolChat, AgentCLIProtocolResponses},
+	"agy":         {AgentCLIProtocolGemini, AgentCLIProtocolChat},
+	"prime-agent": {AgentCLIProtocolChat, AgentCLIProtocolResponses, AgentCLIProtocolMessages},
+	"gemini-cli":  {AgentCLIProtocolGemini},
+	"goose":       {AgentCLIProtocolChat, AgentCLIProtocolMessages},
 }
 
 // NormalizeAgentCLIProtocol returns a supported protocol choice; unknown
