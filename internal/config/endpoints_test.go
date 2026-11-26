@@ -3,7 +3,12 @@ package config
 import "testing"
 
 func clearEndpointEnv(t *testing.T) {
-	for _, key := range []string{"AGENTFLOW_HTTP_PORT", "AGENTFLOW_API_URL", "AGENTFLOW_PLATFORM_MCP_URL", "AGENTFLOW_PLATFORM_MCP_TOKEN", "AGENTFLOW_CONTROL_URL", "AGENTFLOW_CONTROL_TOKEN", "AGENTFLOW_WORKER_URL", "AGENTFLOW_AGENT_TOOL_GATEWAY_URL"} {
+	for _, key := range []string{
+		"AGENTFLOW_HTTP_PORT", "AGENTFLOW_API_URL", "AGENTFLOW_PLATFORM_MCP_URL", "AGENTFLOW_PLATFORM_MCP_TOKEN",
+		"AGENTFLOW_CONTROL_URL", "AGENTFLOW_CONTROL_TOKEN", "AGENTFLOW_WORKER_URL", "AGENTFLOW_AGENT_TOOL_GATEWAY_URL",
+		"AGENTFLOW_BIFROST_URL", "AGENTFLOW_BIFROST_SANDBOX_URL", "AGENTFLOW_BIFROST_VIRTUAL_KEY",
+		"AGENTFLOW_BIFROST_ADMIN_TOKEN", "AGENTFLOW_BIFROST_MODE",
+	} {
 		t.Setenv(key, "")
 	}
 }
@@ -97,5 +102,42 @@ func TestPrivateAgentToolGatewayUnlessOverridden(t *testing.T) {
 	ep, _ = LoadEndpoints("api", "0.0.0.0:18090")
 	if got := ep.WithPrivateAgentToolGateway("http://127.0.0.1:41234").AgentToolGateway; got != "http://gateway.internal:9000" {
 		t.Fatalf("explicit override lost: %s", got)
+	}
+}
+
+func TestLoadEndpointsBifrost(t *testing.T) {
+	clearEndpointEnv(t)
+	ep, err := LoadEndpoints("all", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ep.BifrostURL != "" || ep.BifrostSandboxURL != "" || ep.BifrostMode != "off" {
+		t.Fatalf("unset bifrost defaults = %#v", ep)
+	}
+
+	t.Setenv("AGENTFLOW_BIFROST_URL", "http://127.0.0.1:8091/")
+	t.Setenv("AGENTFLOW_BIFROST_VIRTUAL_KEY", " sk-bf-test ")
+	t.Setenv("AGENTFLOW_BIFROST_ADMIN_TOKEN", " bfak_admin ")
+	ep, err = LoadEndpoints("all", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ep.BifrostURL != "http://127.0.0.1:8091" || ep.BifrostSandboxURL != "http://127.0.0.1:8091" || ep.BifrostVirtualKey != "sk-bf-test" || ep.BifrostAdminToken != "bfak_admin" || ep.BifrostMode != "fallback-when-empty" {
+		t.Fatalf("configured bifrost = %#v", ep)
+	}
+
+	t.Setenv("AGENTFLOW_BIFROST_SANDBOX_URL", "http://host.docker.internal:8091/")
+	t.Setenv("AGENTFLOW_BIFROST_MODE", "force-all")
+	ep, err = LoadEndpoints("all", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ep.BifrostSandboxURL != "http://host.docker.internal:8091" || ep.BifrostMode != "force-all" {
+		t.Fatalf("sandbox override = %#v", ep)
+	}
+
+	t.Setenv("AGENTFLOW_BIFROST_MODE", "invalid")
+	if _, err := LoadEndpoints("all", ""); err == nil {
+		t.Fatal("expected invalid AGENTFLOW_BIFROST_MODE error")
 	}
 }

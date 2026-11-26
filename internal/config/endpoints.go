@@ -34,11 +34,27 @@ type Endpoints struct {
 	AgentToolGateway string
 	// CollectorBase receives OTLP telemetry from agent CLIs.
 	CollectorBase string
+	// BifrostURL is the host-reachable Bifrost LLM router/gateway base URL
+	// (e.g. http://127.0.0.1:8091 on desktop or http://bifrost:8091 in Compose).
+	BifrostURL string
+	// BifrostSandboxURL is the Bifrost base URL reachable from inside agent
+	// sandboxes (defaults to BifrostURL when AGENTFLOW_BIFROST_SANDBOX_URL is unset).
+	BifrostSandboxURL string
+	// BifrostVirtualKey is the optional default virtual key (sk-bf-*) injected
+	// into harnesses and evals when Bifrost routing is active.
+	BifrostVirtualKey string
+	// BifrostAdminToken is the optional management Bearer token used when
+	// calling Bifrost /api/* control-plane endpoints.
+	BifrostAdminToken string
+	// BifrostMode controls credential routing precedence:
+	// "off", "fallback-when-empty", or "force-all".
+	BifrostMode string
 }
 
 const (
 	defaultAPIPort    = "8080"
 	defaultWorkerAddr = ":8081"
+	DefaultBifrostPort = "8091"
 )
 
 // LoadEndpoints resolves Endpoints for role from the -addr flag and env.
@@ -48,7 +64,16 @@ func LoadEndpoints(role, addrFlag string) (Endpoints, error) {
 		PlatformMCPToken:  env("AGENTFLOW_PLATFORM_MCP_TOKEN"),
 		ControlToken:      env("AGENTFLOW_CONTROL_TOKEN"),
 		WorkerFallbackURL: envURL("AGENTFLOW_WORKER_URL"),
+		BifrostURL:        envURL("AGENTFLOW_BIFROST_URL"),
+		BifrostVirtualKey: env("AGENTFLOW_BIFROST_VIRTUAL_KEY"),
+		BifrostAdminToken: env("AGENTFLOW_BIFROST_ADMIN_TOKEN"),
 	}
+	ep.BifrostSandboxURL = firstNonEmpty(envURL("AGENTFLOW_BIFROST_SANDBOX_URL"), ep.BifrostURL)
+	bifrostMode, err := bifrostModeFromEnv(ep.BifrostURL != "")
+	if err != nil {
+		return Endpoints{}, err
+	}
+	ep.BifrostMode = bifrostMode
 	httpPort, err := httpPortFromEnv()
 	if err != nil {
 		return Endpoints{}, err
@@ -77,6 +102,22 @@ func httpPortFromEnv() (string, error) {
 		return "", fmt.Errorf("invalid AGENTFLOW_HTTP_PORT %q", port)
 	}
 	return port, nil
+}
+
+func bifrostModeFromEnv(hasURL bool) (string, error) {
+	raw := strings.ToLower(env("AGENTFLOW_BIFROST_MODE"))
+	if raw == "" {
+		if hasURL {
+			return "fallback-when-empty", nil
+		}
+		return "off", nil
+	}
+	switch raw {
+	case "off", "fallback-when-empty", "force-all":
+		return raw, nil
+	default:
+		return "", fmt.Errorf("invalid AGENTFLOW_BIFROST_MODE %q (want off, fallback-when-empty, or force-all)", raw)
+	}
 }
 
 // WithPrivateAgentToolGateway points native agent-tool callbacks at base, the
